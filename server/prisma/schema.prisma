@@ -1,0 +1,22 @@
+// GunSnip data model. See PRD.md §9 for the sketch this implements.
+//
+// Rules that hold everywhere in this file:
+//   - Money is Int, in IDR minor units. Never Float, never Decimal, never String.
+//   - Tables an actor can own (cart, order, review, notify_request) carry BOTH session_id
+//     and a nullable user_id from the first migration, so Phase 1 auth is additive (PRD §11.1).
+//
+// Models arrive in Phase 2. Phase 0 establishes the connection and the generated client only.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL lives in prisma7.config.ts, per Prisma 7.
+}

@@ -10,6 +10,13 @@ client/next-env.d.ts
 # nest build output
 server/dist/
 
+# generated Prisma client — lives under src/ because the Prisma 7 generator emits TypeScript,
+# which has to be inside the compiled source tree. Recreate with `npm run db:generate -w server`.
+server/src/generated/
+
+# shared package build output
+packages/*/dist/
+
 # env
 .env
 .env.local

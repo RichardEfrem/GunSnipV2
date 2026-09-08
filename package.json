@@ -1,0 +1,23 @@
+{
+  "name": "gunsnip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gunpla e-commerce — Next.js storefront and admin, NestJS API, PostgreSQL.",
+  "workspaces": [
+    "packages/*",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @gunsnip/shared",
+    "dev:web": "npm run dev -w client",
+    "dev:api": "npm run start:dev -w server",
+    "build": "npm run build:shared && npm run build -w server && npm run build -w client",
+    "lint": "npm run lint -w server && npm run lint -w client",
+    "test": "npm run test -w server",
+    "test:e2e": "npm run test:e2e -w server"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
