@@ -4,11 +4,6 @@ Gunpla e-commerce — model kits and the tools to build them, as one connected c
 
 Next.js storefront and admin · NestJS REST API · PostgreSQL with Prisma.
 
-- [`PRD.md`](PRD.md) — requirements, with the `FR-*` ids the code refers to
-- [`DESIGN.md`](DESIGN.md) — design tokens, screens, components
-- [`PLAN.md`](PLAN.md) — the phased build order
-- [`CLAUDE.md`](CLAUDE.md) — architecture contract
-
 ## Layout
 
 npm workspaces:

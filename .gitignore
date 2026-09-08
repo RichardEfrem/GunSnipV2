@@ -28,6 +28,12 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# project docs — kept local, not tracked
+CLAUDE.md
+DESIGN.md
+PLAN.md
+PRD.md
+
 # misc
 .DS_Store
 *.pem
