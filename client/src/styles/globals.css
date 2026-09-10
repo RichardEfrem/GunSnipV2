@@ -1,0 +1,271 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+@layer base {
+  /* Tailwind v4 defaults an unqualified `border` to currentColor, which would paint panel
+     lines in text colour. Panel lines are the site's separator (DESIGN.md §2.3), so they are
+     the default. */
+  *,
+  ::after,
+  ::before {
+    border-color: var(--armor-150);
+  }
+
+  html {
+    /* 200% zoom without horizontal scroll (DESIGN.md §6) starts with never letting a long
+       unbroken string — an order number, a URL — widen the page. */
+    overflow-wrap: break-word;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--armor-050);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.55;
+  }
+
+  /* Headings are Condensed 600 — a density decision, not a style one (DESIGN.md §2.2). */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  /* Sentence case everywhere (DESIGN.md §5), including anything a browser would shout. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  /**
+   * Focus is never removed (DESIGN.md §4.6). This is the floor — every focusable thing gets
+   * the ring, including anything that cannot host a pseudo-element (inputs, selects). The
+   * `reticle` utility adds the corner brackets on top for elements that can.
+   */
+  :focus-visible {
+    outline: 2px solid var(--reticle-color, var(--core-blue));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--core-blue);
+    color: var(--color-white, #fff);
+  }
+
+  /* Mono is for machine identifiers only (DESIGN.md §2.2), and they read better spaced. */
+  [data-machine] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/**
+ * Gunpla armor is chamfered, not rounded: cut the top-left and bottom-right (DESIGN.md §2.3).
+ * clip-path, not a rotated pseudo-element — it respects overflow and costs nothing.
+ */
+@utility chamfer {
+  clip-path: polygon(
+    var(--chamfer) 0,
+    100% 0,
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    0 100%,
+    0 var(--chamfer)
+  );
+}
+
+/**
+ * The same cut for elements that take focus.
+ *
+ * clip-path clips *everything* the element paints, outline and pseudo-elements included, so a
+ * chamfered button drawn with `chamfer` could never show the §4.6 focus ring — the ring sits
+ * outside the shape and would be cut away. Here the element stays unclipped and a plate
+ * behind it carries the cut instead, which leaves the ring free to draw outside.
+ *
+ * Set the plate's colour with `--plate`.
+ */
+@utility chamfer-plate {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-color: var(--plate, transparent);
+    clip-path: polygon(
+      var(--chamfer) 0,
+      100% 0,
+      100% calc(100% - var(--chamfer)),
+      calc(100% - var(--chamfer)) 100%,
+      0 100%,
+      0 var(--chamfer)
+    );
+    transition: background-color var(--duration-fast) ease-out;
+  }
+}
+
+/**
+ * Four corner brackets around the focus ring — a targeting reticle (DESIGN.md §4.6). On theme,
+ * and more visible than a plain ring on a busy background such as a product image.
+ *
+ *    ┌╴      ╶┐
+ *     [ Button ]
+ *    └╴      ╶┘
+ *
+ * Drawn as a full border that is then masked down to its four corners, so there is one box to
+ * position rather than four.
+ */
+@utility reticle {
+  position: relative;
+
+  &:focus-visible::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    pointer-events: none;
+    border: 2px solid var(--reticle-color, var(--core-blue));
+    --bracket: 9px;
+    mask:
+      linear-gradient(#000 0 0) 0 0 / var(--bracket) var(--bracket) no-repeat,
+      linear-gradient(#000 0 0) 100% 0 / var(--bracket) var(--bracket) no-repeat,
+      linear-gradient(#000 0 0) 0 100% / var(--bracket) var(--bracket) no-repeat,
+      linear-gradient(#000 0 0) 100% 100% / var(--bracket) var(--bracket) no-repeat;
+  }
+}
+
+/**
+ * Which surface a subtree sits on, for the one thing that cannot be settled by the palette
+ * alone: the focus indicator.
+ *
+ * --core-blue is tuned against armor and reaches only 2.10:1 on --frame-900, well under the
+ * 3:1 §6 puts under a focus indicator. The frame is the same dark gunmetal in both themes, so
+ * it needs the lightened blue permanently — and anything armor-coloured *inside* the frame,
+ * such as an open nav panel, has to switch back.
+ */
+@utility on-frame {
+  --reticle-color: var(--frame-focus);
+}
+
+@utility on-armor {
+  --reticle-color: var(--core-blue);
+}
+
+/** Skeleton shimmer — 1.4s, and off under reduced motion (DESIGN.md §4.5). */
+@utility shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--armor-150) 0%,
+    color-mix(in oklab, var(--armor-150) 45%, var(--armor-000)) 50%,
+    var(--armor-150) 100%
+  );
+  background-size: 200% 100%;
+  animation: gs-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes gs-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/** The one signature moment: a part snapping into place (DESIGN.md §2.4). */
+@keyframes gs-badge-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@utility badge-pop {
+  animation: gs-badge-pop var(--duration-fast) var(--ease-snap);
+}
+
+/**
+ * `prefers-reduced-motion` disables the cart arc, the shimmer and all transforms
+ * (DESIGN.md §2.4, §6). Colour and outline changes stay — they carry meaning, not decoration.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .shimmer {
+    animation: none;
+    background-image: none;
+    background-color: var(--armor-150);
+  }
+}
+
+/**
+ * Entry motion for the three floating surfaces. 120–180ms ease-out on state change
+ * (DESIGN.md §2.4); the reduced-motion block above collapses all of it to nothing.
+ *
+ * Entry only — Radix unmounts on close, and a surface that lingers on the way out delays the
+ * thing behind it. Nothing here animates layout, only opacity and transform.
+ */
+@keyframes gs-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes gs-rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes gs-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes gs-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@utility enter-fade {
+  animation: gs-fade-in var(--duration-base) ease-out;
+}
+
+@utility enter-rise {
+  animation: gs-rise var(--duration-base) var(--ease-snap);
+}
+
+@utility enter-slide {
+  animation: gs-slide-in var(--duration-base) var(--ease-snap);
+}
+
+@utility enter-settle {
+  animation: gs-settle var(--duration-fast) ease-out;
+}

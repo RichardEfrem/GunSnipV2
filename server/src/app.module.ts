@@ -7,12 +7,22 @@ import { AccessLogMiddleware } from './common/middleware/access-log.middleware.j
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { ConfigModule } from './config/config.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { SearchModule } from './modules/search/search.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 
 @Module({
   // FallbackModule must stay last — it claims every path nothing else matched.
-  imports: [ConfigModule, PrismaModule, HealthModule, AdminModule, FallbackModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    HealthModule,
+    CatalogModule,
+    SearchModule,
+    AdminModule,
+    FallbackModule,
+  ],
   providers: [
     // Every request gets an Actor — no endpoint can forget to ask (PRD §11.1).
     { provide: APP_GUARD, useClass: ActorGuard },

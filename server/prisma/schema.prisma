@@ -1,11 +1,17 @@
-// GunSnip data model. See PRD.md §9 for the sketch this implements.
+// GunSnip data model. Implements the sketch in PRD.md §9.
 //
 // Rules that hold everywhere in this file:
-//   - Money is Int, in IDR minor units. Never Float, never Decimal, never String.
-//   - Tables an actor can own (cart, order, review, notify_request) carry BOTH session_id
-//     and a nullable user_id from the first migration, so Phase 1 auth is additive (PRD §11.1).
 //
-// Models arrive in Phase 2. Phase 0 establishes the connection and the generated client only.
+//   - Money is Int, in whole rupiah (PRD A2). Never Float, never Decimal, never String.
+//     Every such column is named `*_idr` so a wrong type is visible at a glance.
+//   - Tables an actor can own — cart, order, review, notify_request — carry BOTH session_id
+//     and a nullable user_id from this first migration, so Phase 1 auth is additive and no
+//     backfill is ever needed (PRD §11.1).
+//   - Postgres enums mirror the TS unions in `@gunsnip/shared`, which is the single source
+//     (CLAUDE.md Conventions). Grade, Scale and Series are *tables*, not enums, because the
+//     operator edits their copy (FR-ADM-09) — their stable codes live in shared instead.
+//   - Models are PascalCase and columns camelCase for TypeScript; both are mapped to
+//     snake_case in Postgres, because the search layer writes raw SQL against real names.
 
 generator client {
   provider               = "prisma-client"
@@ -13,10 +19,979 @@ generator client {
   runtime                = "nodejs"
   moduleFormat           = "esm"
   generatedFileExtension = "ts"
-  importFileExtension    = "js"
+  importFileExtension    = "ts"
 }
 
 datasource db {
   provider = "postgresql"
   // Connection URL lives in prisma7.config.ts, per Prisma 7.
+}
+
+// ---------------------------------------------------------------------------- enums
+
+enum ProductType {
+  MODEL_KIT
+  TOOL_SUPPLY
+
+  @@map("product_type")
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("product_status")
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+
+  @@map("difficulty")
+}
+
+enum DecalType {
+  NONE
+  STICKER
+  FOIL
+  DRY_TRANSFER
+  WATERSLIDE
+
+  @@map("decal_type")
+}
+
+enum ToolJob {
+  CUTTING
+  SHAPING
+  PAINTING
+  ADHESIVE
+  FINISHING
+  DECAL_AIDS
+  DISPLAY
+  STORAGE
+  WORKSPACE
+
+  @@map("tool_job")
+}
+
+enum Necessity {
+  REQUIRED
+  RECOMMENDED
+  OPTIONAL
+
+  @@map("necessity")
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PACKING
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  REFUNDED
+
+  @@map("order_status")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  VIRTUAL_ACCOUNT
+  E_WALLET
+
+  @@map("payment_method")
+}
+
+enum PaymentEventType {
+  CHARGE_CREATED
+  CHARGE_PAID
+  CHARGE_FAILED
+  CHARGE_EXPIRED
+  CHARGE_REFUNDED
+
+  @@map("payment_event_type")
+}
+
+enum ShippingTier {
+  REGULAR
+  EXPRESS
+  SAME_DAY
+
+  @@map("shipping_tier")
+}
+
+enum ShippingZone {
+  JABODETABEK
+  JAVA
+  BALI_NUSA
+  SUMATRA
+  KALIMANTAN
+  SULAWESI
+  MALUKU_PAPUA
+
+  @@map("shipping_zone")
+}
+
+enum VoucherType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+
+  @@map("voucher_type")
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("review_status")
+}
+
+enum InventoryMovementReason {
+  RESTOCK
+  CORRECTION
+  DAMAGE
+  LOSS
+  RETURN
+  ORDER_FULFILLED
+
+  @@map("inventory_movement_reason")
+}
+
+enum ActorKind {
+  GUEST
+  USER
+  ADMIN
+  SYSTEM
+
+  @@map("actor_kind")
+}
+
+enum AddressRegionLevel {
+  PROVINCE
+  CITY
+  DISTRICT
+
+  @@map("address_region_level")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  CUSTOMER
+
+  @@map("role")
+}
+
+// ---------------------------------------------------------------- reference data
+// Operator-editable (FR-ADM-09). `code` is the stable key the seed and filter rail use;
+// `name` and `description` are copy and may change without breaking a URL or a query.
+
+model Brand {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  products  Product[]
+
+  @@map("brand")
+}
+
+model Grade {
+  id          String  @id @default(uuid()) @db.Uuid
+  /// One of GRADE_CODES in @gunsnip/shared — 'MG', 'RG', …
+  code        String  @unique
+  name        String
+  description String?
+  /// Display order in the filter rail and the home-page grade shortcuts.
+  position    Int     @default(0)
+
+  products     Product[]
+  toolDefaults GradeToolDefault[]
+
+  @@map("grade")
+}
+
+model Scale {
+  id       String @id @default(uuid()) @db.Uuid
+  /// One of SCALE_CODES in @gunsnip/shared — '1/144', 'NON_SCALE', …. Not a Postgres enum:
+  /// '1/144' is not a valid enum identifier, and these are operator-editable anyway.
+  code     String @unique
+  name     String
+  position Int    @default(0)
+
+  products Product[]
+
+  @@map("scale")
+}
+
+model Series {
+  id       String @id @default(uuid()) @db.Uuid
+  name     String
+  slug     String @unique
+  position Int    @default(0)
+
+  products Product[]
+
+  @@map("series")
+}
+
+model Category {
+  id       String       @id @default(uuid()) @db.Uuid
+  name     String
+  slug     String       @unique
+  /// Which storefront tree this belongs to. Kits and tools are browsed separately.
+  type     ProductType
+  parentId String?      @map("parent_id") @db.Uuid
+  parent   Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[]   @relation("CategoryTree")
+  position Int          @default(0)
+
+  products  Product[]
+  vouchers  Voucher[] @relation("VoucherCategories")
+
+  @@index([parentId])
+  @@index([type, position])
+  @@map("category")
+}
+
+model AddressRegion {
+  id         String             @id @default(uuid()) @db.Uuid
+  level      AddressRegionLevel
+  name       String
+  parentId   String?            @map("parent_id") @db.Uuid
+  parent     AddressRegion?     @relation("RegionTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children   AddressRegion[]    @relation("RegionTree")
+  /// Drives the flat shipping rate for any address inside it (A4). Set on provinces and
+  /// inherited downward by the quote service.
+  shippingZone ShippingZone?    @map("shipping_zone")
+  postalCode   String?          @map("postal_code")
+
+  orders Order[]
+
+  @@unique([parentId, name])
+  @@index([level, name])
+  @@map("address_region")
+}
+
+model SearchSynonym {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// The term a customer types. Lower-cased on write by the seed.
+  term      String   @unique
+  /// What it should also match — 'nu gundam' → ['rx-93', 'nu', 'ν'] (FR-SRCH-04).
+  expansions String[]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// See the note on Product's search indexes — created in a migration, declared here so it
+  /// survives the next schema change.
+  @@index([term(ops: raw("gin_trgm_ops"))], type: Gin, map: "search_synonym_term_trgm_idx")
+  @@map("search_synonym")
+}
+
+// ---------------------------------------------------------------------- catalogue
+
+model Product {
+  id          String        @id @default(uuid()) @db.Uuid
+  type        ProductType
+  status      ProductStatus @default(DRAFT)
+  name        String
+  slug        String        @unique
+  description String?
+
+  brandId    String   @map("brand_id") @db.Uuid
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  categoryId String   @map("category_id") @db.Uuid
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  // ---- MODEL_KIT columns (PRD §5.1). First-class rather than JSONB because every one of
+  // them drives the filter rail, and a filter over JSONB is neither fast nor consistent.
+  gradeId           String?     @map("grade_id") @db.Uuid
+  grade             Grade?      @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  scaleId           String?     @map("scale_id") @db.Uuid
+  scale             Scale?      @relation(fields: [scaleId], references: [id], onDelete: Restrict)
+  seriesId          String?     @map("series_id") @db.Uuid
+  series            Series?     @relation(fields: [seriesId], references: [id], onDelete: Restrict)
+  /// The mobile suit itself — "RX-78-2 Gundam". Distinct from the product name.
+  unitName          String?     @map("unit_name")
+  /// "RX-78-2", "MS-06S". Heavily searched, so it is indexed for both FTS and trigram.
+  unitCode          String?     @map("unit_code")
+  runnerCount       Int?        @map("runner_count")
+  partCount         Int?        @map("part_count")
+  difficulty        Difficulty?
+  decalType         DecalType?  @map("decal_type")
+  articulationNotes String?     @map("articulation_notes")
+  /// Weapons, stands, extra hands, LED-ready parts.
+  includes          String[]
+  releaseYear       Int?        @map("release_year")
+  /// Estimated build time, powering "a weekend, if you're quick" copy.
+  runtimeMinutesEst Int?        @map("runtime_minutes_est")
+
+  // ---- TOOL_SUPPLY columns
+  toolJob ToolJob? @map("tool_job")
+
+  /// Long-tail specs that differ per tool line — grit number, paint code, blade angle,
+  /// nozzle mm, capacity ml (PRD §5.1). GIN indexed. Kits keep first-class columns instead.
+  attributes Json @default("{}")
+
+  /// Free-text tags folded into the search vector alongside name, unit and series.
+  tags String[]
+
+  /// Maintained by the `product_search_vector_refresh` trigger, not by the application —
+  /// it has to reach into brand and series, which a generated column cannot do. Unsupported
+  /// because the Prisma client has no tsvector type; Phase 4 queries it with raw SQL.
+  searchVector Unsupported("tsvector")? @map("search_vector")
+
+  // ---- Denormalised aggregates. The product card prints all three (DESIGN.md §3.4) and two
+  // of the six sorts order by them (FR-CAT-06). They are counters rather than a join because
+  // Prisma cannot order by an expression, and a correlated aggregate over `review` and
+  // `order_item` on every listing query would not hold the 300ms budget. Ownership:
+  // `reviewCount`/`ratingAverageTenths` are recomputed when a review is approved or rejected,
+  // `unitsSold` is incremented when an order is fulfilled.
+
+  /// The variant price range, denormalised. Price lives on `product_variant`, and both the
+  /// `price_asc`/`price_desc` sorts (FR-CAT-06) and the price-range filter (FR-CAT-04) need to
+  /// order and range-scan products by it — neither of which Prisma can express as an aggregate
+  /// over a relation. Stock is deliberately *not* denormalised the same way: price changes when
+  /// an operator edits a variant, but availability changes on every reservation, so a product
+  /// level stock counter would have to be kept correct inside the Phase 7 order transaction.
+  /// Maintained wherever a variant's price is written.
+  minPriceIdr Int @default(0) @map("min_price_idr")
+  maxPriceIdr Int @default(0) @map("max_price_idr")
+
+  /// Units shipped, all time. Drives the `best_selling` sort and the "1.2k sold" line.
+  unitsSold Int @default(0) @map("units_sold")
+
+  /// Approved reviews only — the number in "★ 4.8 (142)".
+  reviewCount Int @default(0) @map("review_count")
+
+  /// Mean approved rating in tenths of a star: 4.8 is 48. An integer for the same reason money
+  /// is (PRD A2) — it sorts and indexes without a float, and the scale is in the name so no
+  /// call site can mistake 48 for a rating. 0 when `reviewCount` is 0; read the count first.
+  ratingAverageTenths Int @default(0) @map("rating_average_tenths")
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  variants          ProductVariant[]
+  images            ProductImage[]
+  /// Tools this kit needs (PRD §5.3).
+  requiredTools     ProductRequirement[] @relation("KitRequirements")
+  /// Kits that need this tool.
+  requiredByKits    ProductRequirement[] @relation("ToolRequiredBy")
+  gradeToolDefaults GradeToolDefault[]
+  reviews           Review[]
+  vouchers          Voucher[]            @relation("VoucherProducts")
+
+  @@index([type, status])
+  @@index([gradeId, scaleId])
+  /// Tool specs are queried by key (PRD §5.1) — "every 600-grit sanding stick" — which needs
+  /// GIN. Kits filter on real columns and never touch this.
+  @@index([attributes], type: Gin)
+  @@index([categoryId, status])
+  @@index([brandId])
+  @@index([seriesId])
+  @@index([unitCode])
+  @@index([publishedAt(sort: Desc)])
+  /// The two aggregate sorts (FR-CAT-06). Descending, because nobody asks for the worst-rated.
+  @@index([unitsSold(sort: Desc)])
+  @@index([ratingAverageTenths(sort: Desc)])
+  /// Both halves of the price sort, and the range filter behind them.
+  @@index([minPriceIdr])
+  @@index([maxPriceIdr])
+  /// The search indexes are *created* by the search_infrastructure migration, and declared
+  /// again here on purpose. An index Prisma cannot see is one `migrate dev` silently drops the
+  /// next time this model changes — which is exactly what happened when the aggregate columns
+  /// above were first added. `map` pins each name to what that migration created, so the two
+  /// declarations describe the same index rather than fighting over it.
+  @@index([searchVector], type: Gin, map: "product_search_vector_idx")
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_name_trgm_idx")
+  @@index([unitName(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_unit_name_trgm_idx")
+  @@index([unitCode(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_unit_code_trgm_idx")
+  @@map("product")
+}
+
+model ProductVariant {
+  id        String  @id @default(uuid()) @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sku  String  @unique
+  /// Shown only when the product has more than one variant.
+  name String?
+  /// {"colour": "Mr. Color 8 Silver"} | {"grit": "600"} (PRD §5.2).
+  optionValues Json @default("{}") @map("option_values")
+
+  priceIdr          Int  @map("price_idr")
+  /// The struck-through original. Discount percent is always computed, never typed (FR-PROMO-03).
+  compareAtPriceIdr Int? @map("compare_at_price_idr")
+
+  /// available = stock_on_hand − stock_reserved (PRD §8.3). Never store `available`; it is
+  /// derived, and a stored copy is a second source of truth waiting to disagree.
+  stockOnHand   Int @default(0) @map("stock_on_hand")
+  stockReserved Int @default(0) @map("stock_reserved")
+
+  weightGrams Int     @default(0) @map("weight_grams")
+  barcode     String?
+  position    Int     @default(0)
+  isArchived  Boolean @default(false) @map("is_archived")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  movements      InventoryMovement[]
+  notifyRequests NotifyRequest[]
+  bundleItems    BundleItem[]
+
+  @@index([productId, position])
+  @@map("product_variant")
+}
+
+model ProductImage {
+  id        String  @id @default(uuid()) @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  url String
+  /// Describes the kit, never "product image" (DESIGN.md §6).
+  alt String
+  /// Base64 data URI rendered at build time, so next/image has a placeholder without a
+  /// round trip (DESIGN.md §7).
+  blurDataUrl String  @map("blur_data_url")
+  position    Int     @default(0)
+  isPrimary   Boolean @default(false) @map("is_primary")
+
+  @@index([productId, position])
+  @@map("product_image")
+}
+
+/// kit → tool, the relation the whole product page is built around (PRD §5.3, FR-PDP-08).
+model ProductRequirement {
+  id            String  @id @default(uuid()) @db.Uuid
+  kitProductId  String  @map("kit_product_id") @db.Uuid
+  kit           Product @relation("KitRequirements", fields: [kitProductId], references: [id], onDelete: Cascade)
+  toolProductId String  @map("tool_product_id") @db.Uuid
+  tool          Product @relation("ToolRequiredBy", fields: [toolProductId], references: [id], onDelete: Cascade)
+
+  necessity Necessity
+  /// Why, in the customer's terms: "Waterslide decals need setting solution".
+  reason    String?
+  position  Int       @default(0)
+
+  @@unique([kitProductId, toolProductId])
+  @@index([toolProductId])
+  @@map("product_requirement")
+}
+
+/// Every kit of a grade needs a nipper, so requirements are curated per grade and copied onto
+/// a product at seed or creation time, then overridable per product (PRD §5.3).
+model GradeToolDefault {
+  id            String  @id @default(uuid()) @db.Uuid
+  gradeId       String  @map("grade_id") @db.Uuid
+  grade         Grade   @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  toolProductId String  @map("tool_product_id") @db.Uuid
+  tool          Product @relation(fields: [toolProductId], references: [id], onDelete: Cascade)
+
+  necessity Necessity
+  reason    String?
+  position  Int       @default(0)
+
+  @@unique([gradeId, toolProductId])
+  @@map("grade_tool_default")
+}
+
+// --------------------------------------------------------------------------- cart
+
+model Cart {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Both, from the first migration (PRD §11.1). Phase 1 adopts a guest cart by setting
+  /// user_id on the row that already has this session_id — no data moves.
+  sessionId String  @map("session_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+
+  voucherId String?  @map("voucher_id") @db.Uuid
+  voucher   Voucher? @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items CartItem[]
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("cart")
+}
+
+model CartItem {
+  id     String @id @default(uuid()) @db.Uuid
+  cartId String @map("cart_id") @db.Uuid
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  variantId String         @map("variant_id") @db.Uuid
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  quantity Int
+  /// Per-line selection drives the totals; unchecked lines stay in the cart and are excluded
+  /// from checkout, which is how people actually use a cart (FR-CART-03).
+  isSelected Boolean @default(true) @map("is_selected")
+
+  /// What the line cost when it was added, so a later price change can be *surfaced* rather
+  /// than applied silently (FR-CART-04). Never used to charge — totals are always recomputed
+  /// from the variant (CLAUDE.md non-negotiable #2).
+  priceAtAddIdr Int @map("price_at_add_idr")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cartId, variantId])
+  @@index([variantId])
+  @@map("cart_item")
+}
+
+// ------------------------------------------------------------------------- orders
+
+model Order {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// GS-YYMMDD-XXXX (FR-ORD-01).
+  orderNumber String @unique @map("order_number")
+
+  sessionId String  @map("session_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+
+  status OrderStatus @default(PENDING_PAYMENT)
+
+  /// Name, email, phone and the full address exactly as given at purchase (PRD §9). Held as
+  /// JSONB rather than FKs so a later profile edit cannot rewrite history (FR-ORD-05).
+  customerSnapshot Json @map("customer_snapshot")
+
+  /// Kept for shipping-zone reporting. The address itself is in the snapshot above.
+  shippingRegionId String?        @map("shipping_region_id") @db.Uuid
+  shippingRegion   AddressRegion? @relation(fields: [shippingRegionId], references: [id], onDelete: SetNull)
+
+  shippingTier ShippingTier @map("shipping_tier")
+
+  subtotalIdr Int @map("subtotal_idr")
+  discountIdr Int @default(0) @map("discount_idr")
+  shippingIdr Int @map("shipping_idr")
+  totalIdr    Int @map("total_idr")
+
+  customerNote String?   @map("customer_note")
+  internalNote String?   @map("internal_note")
+  cancelReason String?   @map("cancel_reason")
+  placedAt     DateTime  @default(now()) @map("placed_at")
+  paidAt       DateTime? @map("paid_at")
+  deliveredAt  DateTime? @map("delivered_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  items       OrderItem[]
+  events      OrderEvent[]
+  payment     Payment?
+  shipment    Shipment?
+  redemption  VoucherRedemption?
+  idempotency IdempotencyKey[]
+
+  @@index([sessionId])
+  @@index([userId])
+  @@index([status, placedAt(sort: Desc)])
+  @@map("order")
+}
+
+/// Snapshotted on purpose: later catalogue edits never mutate a historical order (FR-ORD-05).
+/// `variantId` stays for reporting and re-order, but nothing on this row reads through it.
+model OrderItem {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  variantId String?         @map("variant_id") @db.Uuid
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  productNameSnapshot String  @map("product_name_snapshot")
+  variantNameSnapshot String? @map("variant_name_snapshot")
+  skuSnapshot         String  @map("sku_snapshot")
+  imageUrlSnapshot    String? @map("image_url_snapshot")
+  productSlugSnapshot String  @map("product_slug_snapshot")
+
+  unitPriceIdr Int @map("unit_price_idr")
+  quantity     Int
+  lineTotalIdr Int @map("line_total_idr")
+
+  reviews Review[]
+  invites ReviewInvite[]
+
+  @@index([orderId])
+  @@index([variantId])
+  @@map("order_item")
+}
+
+/// Every status change, with who and why (FR-ORD-06).
+model OrderEvent {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Null on the row that records order creation — there is no status to come from.
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+
+  actorKind ActorKind @map("actor_kind")
+  /// Session id, user id, or null when actorKind is SYSTEM.
+  actorId   String?   @map("actor_id")
+  note      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([orderId, createdAt])
+  @@map("order_event")
+}
+
+// ----------------------------------------------------------------------- payments
+
+model Payment {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @unique @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Which PaymentProvider produced this — 'mock' now, a gateway name later (PRD §11.3).
+  /// Stored so a row can still be interpreted after the provider is switched.
+  provider String
+  method   PaymentMethod
+  status   PaymentStatus @default(PENDING)
+
+  amountIdr Int      @map("amount_idr")
+  expiresAt DateTime @map("expires_at")
+
+  /// The provider's own id for the charge — the mock's fake VA number today.
+  providerRef String? @map("provider_ref")
+  /// What to show the customer: bank, account number, amount (FR-PAY-03).
+  instructions Json?
+
+  paidAt    DateTime? @map("paid_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  events PaymentEvent[]
+
+  @@index([status, expiresAt])
+  @@map("payment")
+}
+
+/// Shaped like a real gateway webhook payload, so the code that consumes it does not change
+/// when a real gateway starts producing it (FR-PAY-07).
+model PaymentEvent {
+  id        String  @id @default(uuid()) @db.Uuid
+  paymentId String  @map("payment_id") @db.Uuid
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  type    PaymentEventType
+  payload Json
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([paymentId, createdAt])
+  @@map("payment_event")
+}
+
+model Shipment {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @unique @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  courier        String
+  trackingNumber String?   @map("tracking_number")
+  estimatedDays  Int       @map("estimated_days")
+  shippedAt      DateTime? @map("shipped_at")
+  deliveredAt    DateTime? @map("delivered_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("shipment")
+}
+
+/// Flat courier rates by zone and tier (A4, FR-CO-04).
+model ShippingRate {
+  id      String       @id @default(uuid()) @db.Uuid
+  zone    ShippingZone
+  tier    ShippingTier
+  priceIdr Int         @map("price_idr")
+  minDays Int          @map("min_days")
+  maxDays Int          @map("max_days")
+  isActive Boolean     @default(true) @map("is_active")
+
+  @@unique([zone, tier])
+  @@map("shipping_rate")
+}
+
+/// Makes `POST /orders` safe to retry (FR-CO-07). A repeat with the same key returns the
+/// original order instead of creating a second one.
+model IdempotencyKey {
+  id  String @id @default(uuid()) @db.Uuid
+  key String
+
+  /// Which endpoint the key belongs to, so one key cannot collide across operations.
+  scope     String
+  sessionId String @map("session_id") @db.Uuid
+
+  /// Hash of the request body. A repeat of the same key with a *different* body is a client
+  /// bug, and answering it with the first order would hide that.
+  requestHash String @map("request_hash")
+
+  orderId String? @map("order_id") @db.Uuid
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_key")
+}
+
+/// The audit trail behind every stock change (FR-ADM-05, PRD §8.3). `delta` is signed.
+model InventoryMovement {
+  id        String         @id @default(uuid()) @db.Uuid
+  variantId String         @map("variant_id") @db.Uuid
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  delta  Int
+  reason InventoryMovementReason
+  note   String?
+
+  actorKind ActorKind @map("actor_kind")
+  actorId   String?   @map("actor_id")
+  /// Set when the movement came from fulfilling an order.
+  orderId   String?   @map("order_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([variantId, createdAt(sort: Desc)])
+  @@map("inventory_movement")
+}
+
+// ----------------------------------------------------------------------- vouchers
+
+model Voucher {
+  id   String      @id @default(uuid()) @db.Uuid
+  code String      @unique
+  type VoucherType
+
+  /// PERCENTAGE reads `percentOff`; FIXED_AMOUNT and FREE_SHIPPING read `amountIdr`.
+  /// Two nullable columns rather than one polymorphic `value`, so a percentage can never be
+  /// mistaken for rupiah.
+  percentOff Int? @map("percent_off")
+  amountIdr  Int? @map("amount_idr")
+
+  // ---- constraints (FR-PROMO-02)
+  minSpendIdr     Int?      @map("min_spend_idr")
+  maxDiscountIdr  Int?      @map("max_discount_idr")
+  startsAt        DateTime  @map("starts_at")
+  endsAt          DateTime  @map("ends_at")
+  usageLimit      Int?      @map("usage_limit")
+  perSessionLimit Int?      @map("per_session_limit")
+  usedCount       Int       @default(0) @map("used_count")
+  isActive        Boolean   @default(true) @map("is_active")
+
+  /// Empty scope means the whole catalogue.
+  categories Category[] @relation("VoucherCategories")
+  products   Product[]  @relation("VoucherProducts")
+
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  carts       Cart[]
+  redemptions VoucherRedemption[]
+
+  @@index([isActive, startsAt, endsAt])
+  @@map("voucher")
+}
+
+/// One voucher per order in v1 (FR-PROMO-05), which the unique orderId enforces in the schema
+/// rather than in a service.
+model VoucherRedemption {
+  id        String  @id @default(uuid()) @db.Uuid
+  voucherId String  @map("voucher_id") @db.Uuid
+  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  orderId   String  @unique @map("order_id") @db.Uuid
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  sessionId String  @map("session_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+
+  /// What it actually took off this order, after the cap.
+  amountIdr Int      @map("amount_idr")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([voucherId, sessionId])
+  @@map("voucher_redemption")
+}
+
+// ------------------------------------------------------------------------ reviews
+
+model Review {
+  id        String  @id @default(uuid()) @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Reviews are only accepted against a delivered order line (FR-REV-02), which is also
+  /// what makes the verified badge true rather than claimed.
+  orderItemId String?    @unique @map("order_item_id") @db.Uuid
+  orderItem   OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  sessionId String  @map("session_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+
+  authorName String @map("author_name")
+  rating     Int
+  title      String
+  body       String
+
+  status             ReviewStatus @default(PENDING)
+  isVerifiedPurchase Boolean      @default(false) @map("is_verified_purchase")
+
+  // ---- kit-specific fields (FR-REV-04). No generic review widget captures these.
+  buildTimeMinutes      Int?        @map("build_time_minutes")
+  experiencedDifficulty Difficulty? @map("experienced_difficulty")
+  toolsUsed             String[]    @map("tools_used")
+
+  adminReply  String?   @map("admin_reply")
+  moderatedAt DateTime? @map("moderated_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  photos ReviewPhoto[]
+
+  @@index([productId, status, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("review")
+}
+
+model ReviewPhoto {
+  id       String @id @default(uuid()) @db.Uuid
+  reviewId String @map("review_id") @db.Uuid
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  url      String
+  alt      String
+  position Int    @default(0)
+
+  @@index([reviewId, position])
+  @@map("review_photo")
+}
+
+/// The tokenised link sent on delivery, which is how a guest is authorised to review without
+/// an account (FR-REV-02). Phase 1 adds an account path alongside it; this stays.
+model ReviewInvite {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderItemId String    @map("order_item_id") @db.Uuid
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([orderItemId])
+  @@map("review_invite")
+}
+
+// ------------------------------------------------------- notifications and promos
+
+model NotifyRequest {
+  id        String         @id @default(uuid()) @db.Uuid
+  variantId String         @map("variant_id") @db.Uuid
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  email     String
+  sessionId String  @map("session_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+
+  notifiedAt DateTime? @map("notified_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@unique([variantId, email])
+  @@index([variantId, notifiedAt])
+  @@map("notify_request")
+}
+
+/// Kit + tools at a set price (FR-CAT-11).
+///
+/// Catalogue only for now. Making one *purchasable as a single line item* adds a nullable
+/// bundle_id to cart_item and order_item; that is a migration, and it lands with the rest of
+/// FR-CAT-11 rather than sitting unused and unexercised in the hot path until then.
+model Bundle {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String  @unique
+  description String?
+  priceIdr    Int     @map("price_idr")
+
+  startsAt DateTime? @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+  isActive Boolean   @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items BundleItem[]
+
+  @@map("bundle")
+}
+
+model BundleItem {
+  id       String @id @default(uuid()) @db.Uuid
+  bundleId String @map("bundle_id") @db.Uuid
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  variantId String         @map("variant_id") @db.Uuid
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  quantity Int @default(1)
+  position Int @default(0)
+
+  @@unique([bundleId, variantId])
+  @@map("bundle_item")
+}
+
+/// Home-page promo rail, scheduled and admin-managed (FR-PROMO-04, FR-ADM-12).
+model Banner {
+  id       String  @id @default(uuid()) @db.Uuid
+  title    String
+  subtitle String?
+  imageUrl String  @map("image_url")
+  alt      String
+  href     String
+
+  position Int       @default(0)
+  startsAt DateTime? @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+  isActive Boolean   @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, position])
+  @@map("banner")
 }

@@ -1,0 +1,209 @@
+/**
+ * DESIGN.md §2 as CSS custom properties.
+ *
+ * Two layers, deliberately:
+ *
+ *   1. A raw palette on `:root`. Each token is declared exactly once, using `light-dark()`
+ *      so the two themes sit side by side and cannot drift apart. Which arm applies is
+ *      decided by the inherited `color-scheme`, so the theme toggle sets one property on
+ *      <html> rather than re-declaring the palette — and native scrollbars, date pickers and
+ *      autofill follow along for free.
+ *   2. `@theme inline`, which maps that palette onto Tailwind's namespaces. `inline` makes
+ *      each utility read `var(--ink)` rather than a frozen hex, so the theme swap re-themes
+ *      every utility at once instead of needing a `dark:` twin for every class.
+ *
+ * Three values differ from the hexes printed in DESIGN.md §2.1. They failed the §6 contrast
+ * floor, which §2.1 itself tells us to re-verify on any tint change. Each is the *smallest*
+ * lightness move that clears the floor, hue and saturation untouched. `npm run check:contrast`
+ * reads this file and proves every pair.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- Frame — structure. Identical in both themes (DESIGN.md §2.1). ---- */
+  --frame-900: #14161b; /* header, footer, mobile tab bar */
+  --frame-700: #23272f; /* raised frame surfaces, admin sidebar */
+  --frame-500: #3a404b; /* borders on dark, disabled on dark */
+
+  /* Secondary text and placeholders. DESIGN.md prints #767C88, which is 3.84:1 on
+     --armor-050 — under the floor for the 12px metadata it is used for ("★ 4.8 (142) ·
+     1.2k sold"). Darkened until it clears 4.5:1. */
+  --frame-300: light-dark(#6b717b, #888e98);
+
+  /* Foregrounds *on* the frame. The frame is the same dark gunmetal in both themes, so text
+     and control borders sitting on it cannot come from the armor-tuned ramp above — in light
+     mode --frame-300 is darkened for a white page and drops to 3.68:1 on --frame-900. These
+     two hold still, exactly as the surface they sit on does.
+
+     --frame-field-border also replaces the --frame-500 that DESIGN.md §4.1 specifies for the
+     header search box: at 1.44:1 on --frame-700 that border is invisible, and it is the
+     boundary that identifies the control, so §6 puts a 3:1 floor under it. */
+  --frame-muted: #888e98; /* secondary text on frame — 5.49:1 on --frame-900 */
+  --frame-field-border: #667083; /* control borders on frame — 3.00:1 on --frame-700 */
+  --frame-focus: #688ae3; /* focus indicator on frame — 5.46:1 on --frame-900 */
+
+  /* ---- Armor — content. Dark takes the frame values (DESIGN.md §2.1). ---- */
+  --armor-000: light-dark(#ffffff, #23272f); /* cards, inputs, sheets */
+  --armor-050: light-dark(#f4f5f7, #14161b); /* page background */
+  --armor-150: light-dark(#e3e6ea, #3a404b); /* dividers and panel lines */
+  --ink: light-dark(#14161b, #edeff2); /* primary text */
+
+  /* Panel lines are decorative at 1.25:1, which is fine — a card is identified by its
+     content. An input is identified by its border, so that boundary owes 3:1 (DESIGN.md §6)
+     and gets its own token rather than quietly darkening every divider on the site. */
+  --field-border: light-dark(#8996a7, #667083);
+
+  /* ---- Accent — strict, non-overlapping roles (DESIGN.md §1) ----
+     Dark lightens these. DESIGN.md's "~12%" is the starting point, not the rule: blue needs
+     26% and danger 32% to clear 4.5:1 on --armor-000, while yellow already passes at 9.4:1
+     and stays put. */
+  --sortie-red: light-dark(#d6273c, #e36473); /* commerce only */
+  --core-blue: light-dark(#1f44a6, #688ae3); /* navigation and interaction */
+  --signal-yellow: light-dark(#ffc42e, #ffc42e); /* status only */
+
+  /* ---- Semantic ----
+     #1E8E5A and #B4630F are 4.14:1 and 4.44:1 on --armor-050. Both carry 12px text
+     ("● In stock", "Only 2 left"), so both are darkened to clear the floor. */
+  --ok: light-dark(#1b8051, #22a166);
+  --warn: light-dark(#a95d0e, #d47512);
+  --danger: light-dark(#98101f, #ee5b6b);
+
+  /* ---- Fills that carry text of their own ----
+     The accents above are foreground colours, free to lighten in dark mode. A fill is not:
+     lighten the blue plate and it stops being able to hold white text. These hold still in
+     both themes so every white-on-fill pair keeps the ratio it was checked at. */
+  --red-fill: #d6273c; /* primary button, discount badge */
+  --blue-fill: #1f44a6; /* grade badge */
+  --muted-fill: #6b717b; /* out-of-stock badge */
+
+  /* ---- Interaction states ----
+     DESIGN.md fixes the resting colours but not the hover fills for the outline variants.
+     Deriving them from the accent keeps the roles from §1 intact — a hover never introduces a
+     colour the component did not already own — and keeps colour maths out of JSX. */
+  --red-fill-hover: color-mix(in oklab, var(--red-fill) 88%, #000);
+  --core-blue-tint: color-mix(in oklab, var(--core-blue) 10%, transparent);
+  --danger-tint: color-mix(in oklab, var(--danger) 10%, transparent);
+  --ink-tint: color-mix(in oklab, var(--ink) 7%, transparent);
+
+  /* ---- Shape (DESIGN.md §2.3) ---- */
+  --chamfer: 8px;
+
+  /* Panel lines do the separating. A shadow appears only where something genuinely floats. */
+  --shadow-float: light-dark(0 8px 24px rgb(20 22 27 / 0.16), 0 8px 24px rgb(0 0 0 / 0.5));
+}
+
+/* The toggle. `color-scheme` is inherited, so pinning it here settles every light-dark()
+   below it — no second palette to keep in sync. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* `dark:` follows the same rule the palette does: an explicit choice wins, system preference
+   is the default. Rarely reached — the token swap above handles almost everything. */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}
+
+/* Clear the namespaces we replace wholesale. Dropping Tailwind's default palette is the
+   point: `bg-red-500` stops existing, so "no hex literals, use the token" is enforced by the
+   build rather than by review. Must precede the declarations below — @theme blocks merge in
+   source order, so a reset placed after them would wipe them. */
+@theme {
+  --color-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+}
+
+@theme inline {
+  --color-frame-900: var(--frame-900);
+  --color-frame-700: var(--frame-700);
+  --color-frame-500: var(--frame-500);
+  --color-frame-300: var(--frame-300);
+  --color-frame-muted: var(--frame-muted);
+  --color-frame-field-border: var(--frame-field-border);
+  --color-frame-focus: var(--frame-focus);
+  --color-armor-000: var(--armor-000);
+  --color-armor-050: var(--armor-050);
+  --color-armor-150: var(--armor-150);
+  --color-ink: var(--ink);
+  --color-field-border: var(--field-border);
+  --color-sortie-red: var(--sortie-red);
+  --color-core-blue: var(--core-blue);
+  --color-signal-yellow: var(--signal-yellow);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-red-fill: var(--red-fill);
+  --color-blue-fill: var(--blue-fill);
+  --color-muted-fill: var(--muted-fill);
+  --color-red-fill-hover: var(--red-fill-hover);
+  --color-core-blue-tint: var(--core-blue-tint);
+  --color-danger-tint: var(--danger-tint);
+  --color-ink-tint: var(--ink-tint);
+
+  --shadow-float: var(--shadow-float);
+}
+
+@theme {
+  /* The keywords, plus the two literals that really are design decisions: white is the text
+     on every accent fill, black is the modal scrim. */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-inherit: inherit;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* ---- Type (DESIGN.md §2.2). One superfamily, three roles. ---- */
+  --font-display: var(--font-plex-condensed), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* 1.25 modular scale, 16px base: 12 · 14 · 16 · 20 · 24 · 30 · 38 · 48. The scale carries
+     its own leading — body 1.55, headings 1.2 — so a heading never needs a second class to
+     undo body leading. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.55;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.55;
+  --text-base: 1rem;
+  --text-base--line-height: 1.55;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.2;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.2;
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 1.2;
+  --text-3xl: 2.375rem;
+  --text-3xl--line-height: 1.2;
+  --text-4xl: 3rem;
+  --text-4xl--line-height: 1.2;
+
+  /* ---- Shape. Gunpla armor is chamfered, not rounded: there is one radius and it is nearly
+     square. Anything softer is a bug, so the rest of the scale stays deleted. ---- */
+  --radius-sm: 2px;
+  --radius-full: 9999px;
+
+  /* ---- Layout (DESIGN.md §2.3). Spacing keeps Tailwind's 4px base, which already yields
+     4 8 12 16 24 32 48 64 96 at 1/2/3/4/6/8/12/16/24. ---- */
+  --container-content: 1280px;
+  --container-measure: 68ch;
+
+  /* ---- Motion (DESIGN.md §2.4) ---- */
+  --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-arc: 220ms;
+}
