@@ -19,8 +19,7 @@ import { NavDropdown } from './NavDropdown';
  * the rotating placeholder, the dropdown panels — cross into client code.
  */
 interface SiteHeaderProps {
-  /** Wired to the cart in Phase 6; the badge and its animation exist now so that is a data
-   *  change rather than a component change. */
+  /** Units across the cart's selected lines, read on the server by the storefront layout. */
   cartCount?: number;
 }
 

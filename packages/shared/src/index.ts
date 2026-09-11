@@ -1,4 +1,5 @@
 export * from './actor.js';
+export * from './cart.js';
 export * from './enums/actor-kind.js';
 export * from './enums/address-region-level.js';
 export * from './enums/decal-type.js';

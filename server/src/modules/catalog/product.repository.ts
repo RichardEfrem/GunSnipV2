@@ -15,8 +15,14 @@ import { buildProductWhere, type FacetKey, type ProductWhereContext } from './pr
  * page, because that is a query concern.
  */
 
-/** Everything a product card renders (DESIGN.md §3.4), and nothing more. */
-const SUMMARY_SELECT = {
+/**
+ * Everything a product card renders (DESIGN.md §3.4), and nothing more.
+ *
+ * Exported because the build-requirements query selects tools with it too (FR-PDP-08): those
+ * rows go through `toProductSummary` like any other card, and sharing the select is what
+ * guarantees they can.
+ */
+export const SUMMARY_SELECT = {
   id: true,
   slug: true,
   name: true,
@@ -95,6 +101,17 @@ export interface CatalogScope {
   categoryIds?: readonly string[];
   /** The products a text search matched (FR-SRCH-06). */
   productIds?: readonly string[];
+}
+
+/**
+ * The product the related rails are computed *around* — just the columns that decide what
+ * counts as a sibling, so a caller can pass a detail row without the repository depending on
+ * the whole of it.
+ */
+export interface SiblingSubject {
+  id: string;
+  unitName: string | null;
+  seriesId: string | null;
 }
 
 /** `listRanked`'s input: a listing whose order is supplied rather than computed. */
@@ -262,26 +279,121 @@ export class ProductRepository {
   }
 
   /**
-   * Products with a variant restocked recently and still in stock — the home page's "back in
-   * stock" rail (FR-CAT-01).
+   * The home page's "Most popular" rail (FR-CAT-01), ranked by an evidence-weighted rating.
    *
-   * Reads `inventory_movement` rather than a `restocked_at` column so stock history has one
-   * source of truth: the same RESTOCK row the admin stock adjustment writes in Phase 9 is what
-   * puts a product on this rail.
+   * `(v·R + m·C) / (v + m)` — v is the review count, R the product's mean rating, C the
+   * catalogue's mean rating and m the evidence floor the service supplies. A product with few
+   * reviews is pulled toward C and a well-reviewed one keeps its own average, which is the
+   * whole point: the plain `top_rated` sort lets one five-star review outrank two hundred
+   * four-and-a-half-star ones, and on a rail of ten that is all you would ever see.
+   *
+   * Raw SQL because the ranking is an expression over two columns and a catalogue-wide
+   * aggregate, and Prisma cannot `orderBy` something it did not build — the same constraint
+   * `listRanked` works around for `ts_rank`. Ranking then hydrating is two round trips rather
+   * than one, and it keeps the card's column list in `SUMMARY_SELECT` instead of restating
+   * thirty columns in SQL that would silently drift from it.
+   *
+   * Kits only — tools have their own rail, and a popular nipper appearing in both would waste
+   * a row. Out-of-stock kits are *not* excluded: a sold-out hit is still what is popular, the
+   * card says so plainly, and filtering on stock would make the rail's contents jump around
+   * with every reservation.
    */
-  async findRecentlyRestocked(since: Date, take: number): Promise<ProductSummaryRow[]> {
+  async findMostPopular(evidenceFloor: number, take: number): Promise<ProductSummaryRow[]> {
+    const ranked = await this.prisma.$queryRaw<{ id: string }[]>`
+      WITH rated AS (
+        SELECT id, rating_average_tenths, review_count
+        FROM product
+        WHERE status = 'PUBLISHED' AND type = 'MODEL_KIT' AND review_count > 0
+      ),
+      catalogue AS (SELECT AVG(rating_average_tenths) AS mean_tenths FROM rated)
+      SELECT r.id
+      FROM rated r, catalogue c
+      ORDER BY (r.review_count * r.rating_average_tenths + ${evidenceFloor} * c.mean_tenths)
+                 / (r.review_count + ${evidenceFloor})
+               DESC,
+               r.review_count DESC,
+               r.id ASC
+      LIMIT ${take}
+    `;
+
+    const ids = ranked.map((row) => row.id);
+
+    if (ids.length === 0) return [];
+
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: SUMMARY_SELECT,
+    });
+
+    // `IN` has no order of its own, so the score order is restored from the id list rather than
+    // trusted to come back the way it went out — the same reason `listRanked` does it.
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return ids.flatMap((id) => {
+      const row = byId.get(id);
+      return row === undefined ? [] : [row];
+    });
+  }
+
+  /**
+   * The few columns the related rails key off, by slug.
+   *
+   * A separate, tiny read rather than reusing `findBySlug`: the rails are their own endpoint
+   * with their own cache lifetime, and making them load a full detail row — every image, every
+   * variant, the whole spec block — to learn two foreign keys would be the expensive way to
+   * ask a cheap question.
+   */
+  async findSiblingSubject(slug: string): Promise<SiblingSubject | null> {
+    return this.prisma.product.findFirst({
+      where: { slug, status: 'PUBLISHED' },
+      select: { id: true, unitName: true, seriesId: true },
+    });
+  }
+
+  /**
+   * The same mobile suit at other grades — the "also available as MG, RG" rail (FR-PDP-10).
+   *
+   * Keyed on `unitName`, not `unitCode`. The code is a model number and a lineage shares one:
+   * Barbatos, Barbatos Lupus and Barbatos Lupus Rex are all ASW-G-08, and offering the Lupus
+   * Rex as another way to buy the Barbatos is wrong — they are different robots. The name
+   * carries the suffix that separates them, so it is the honest key for "the same thing".
+   */
+  async findSameUnit(product: SiblingSubject, take: number): Promise<ProductSummaryRow[]> {
+    if (product.unitName === null) return [];
+
     return this.prisma.product.findMany({
       where: {
         status: 'PUBLISHED',
-        variants: {
-          some: {
-            ...this.availableVariant,
-            movements: { some: { reason: 'RESTOCK', createdAt: { gte: since } } },
-          },
-        },
+        unitName: product.unitName,
+        id: { not: product.id },
       },
       select: SUMMARY_SELECT,
-      orderBy: [{ publishedAt: 'desc' }, { id: 'asc' }],
+      // Cheapest first: the rail's use is "the same kit, smaller", so price is the axis being
+      // compared and grade order would bury the entry-level option at the end.
+      orderBy: [{ minPriceIdr: 'asc' }, { id: 'asc' }],
+      take,
+    });
+  }
+
+  /**
+   * Other kits from the same series, excluding anything the "also available as" rail already
+   * shows — the same card in two rails reads as a bug, and the more specific rail wins.
+   */
+  async findSameSeries(
+    product: SiblingSubject,
+    excludeIds: readonly string[],
+    take: number,
+  ): Promise<ProductSummaryRow[]> {
+    if (product.seriesId === null) return [];
+
+    return this.prisma.product.findMany({
+      where: {
+        status: 'PUBLISHED',
+        seriesId: product.seriesId,
+        id: { notIn: [product.id, ...excludeIds] },
+      },
+      select: SUMMARY_SELECT,
+      orderBy: [{ unitsSold: 'desc' }, { id: 'asc' }],
       take,
     });
   }

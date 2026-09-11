@@ -13,6 +13,9 @@ import { ProductCard } from './ProductCard';
  *
  * Renders nothing when empty. A titled rail with no contents reads as broken, and the home page
  * has five of them — one being unavailable should be invisible, not an error.
+ *
+ * Carries the same `max-w-content` cap as every other page section so the rail's first card
+ * lines up with the hero edge instead of running the full viewport width.
  */
 interface ProductRailProps {
   title: string;
@@ -27,7 +30,7 @@ export function ProductRail({ title, products, href, isPriority = false }: Produ
   if (products.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="mx-auto flex w-full max-w-content flex-col gap-3">
       <header className="flex items-baseline justify-between gap-4 px-4 md:px-6">
         <h2 className="text-xl">{title}</h2>
         {href === undefined ? null : (
@@ -45,8 +48,11 @@ export function ProductRail({ title, products, href, isPriority = false }: Produ
           with the page gutter at either end of the scroll. */}
       <ul className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 md:gap-4 md:px-6">
         {products.map((product, index) => (
-          <li key={product.id} className="w-40 shrink-0 snap-start sm:w-48 md:w-56">
-            <ProductCard product={product} isPriority={isPriority && index < 4} />
+          // `flex` + `w-full` so the card stretches to the tallest in the rail, the same way
+          // the grid does it. Without it a one-line name yields a shorter card and the runner
+          // tags stop lining up.
+          <li key={product.id} className="flex w-40 shrink-0 snap-start sm:w-48 md:w-56">
+            <ProductCard product={product} isPriority={isPriority && index < 4} className="w-full" />
           </li>
         ))}
       </ul>

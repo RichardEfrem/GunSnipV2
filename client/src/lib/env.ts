@@ -10,10 +10,12 @@ import { z } from 'zod';
  */
 const schema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.url({ error: 'Must be the absolute base URL of the API, e.g. http://localhost:3001/api/v1' }),
+  NEXT_PUBLIC_SITE_URL: z.url({ error: 'Must be the storefront\'s absolute origin, e.g. http://localhost:3000' }),
 });
 
 const parsed = schema.safeParse({
   NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+  NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
 });
 
 if (!parsed.success) {

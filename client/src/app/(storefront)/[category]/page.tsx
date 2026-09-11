@@ -16,6 +16,7 @@ import { ProductGrid, ProductGridSkeleton } from '@/features/catalog/components/
 import { SortControl } from '@/features/catalog/components/SortControl';
 import type { CategoryDetail, ProductPage } from '@/features/catalog/schema';
 import {
+  buildHref,
   pagesToFetch,
   parseListState,
   toApiQuery,
@@ -24,6 +25,7 @@ import {
   type ListState,
 } from '@/features/catalog/search-params';
 import { ApiError } from '@/lib/api-error';
+import { gradeNavLabel } from '@/lib/navigation';
 
 /**
  * The category listing (FR-CAT-03 … FR-CAT-10).
@@ -49,12 +51,17 @@ import { ApiError } from '@/lib/api-error';
 /** Matches the grid: 24 divides by 2, 3, 4 and 5, so no breakpoint ends in a ragged row. */
 const PAGE_SIZE = 24;
 
-export async function generateMetadata({ params }: PageProps<'/[category]'>): Promise<Metadata> {
-  const { category } = await params;
+export async function generateMetadata({
+  params,
+  searchParams,
+}: PageProps<'/[category]'>): Promise<Metadata> {
+  const [{ category }, rawSearchParams] = await Promise.all([params, searchParams]);
 
   try {
     const detail = await fetchCategory(category);
-    return { title: detail.name };
+    // `/kits?grade=MG` is the Master Grade page, so that is the title in the tab and the
+    // search result — "Kits" for all six grades would be six duplicates.
+    return { title: gradeHeading(detail, parseListState(toSearchParams(rawSearchParams))) ?? detail.name };
   } catch {
     // The page raises the 404; metadata must not be the thing that throws.
     return {};
@@ -79,7 +86,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<'
   }
 
   return (
-    <Shell category={category}>
+    <Shell category={category} state={state}>
       {/* No `key`: on a filter change React keeps the current grid on screen until the next one
           is ready, rather than blanking back to skeletons. The skeleton is for the first load,
           where there is nothing to keep. */}
@@ -211,8 +218,39 @@ function ListingSkeleton() {
   );
 }
 
-/** The page chrome, rendered immediately — it depends only on the category, never the filters. */
-function Shell({ category, children }: { category: CategoryDetail; children: ReactNode }) {
+/**
+ * The heading a grade listing gets instead of the category's own name.
+ *
+ * `/kits?grade=MG` is how the storefront browses Master Grade (see `lib/navigation.ts`), and
+ * DESIGN.md §3.2 titles that page "Master Grade" with `Home / Kits / Master Grade` above it —
+ * a grade is a facet, but it is also a destination, and "Kits" would be a worse answer than the
+ * thing the customer just clicked.
+ *
+ * Deliberately narrow. It reads the URL and a static label list, never the facet response, so
+ * the chrome still renders before the products stream. It applies only to the kit tree's root
+ * listing with **exactly one** grade selected: two grades are a filtered kit listing, not the
+ * Master Grade page, and a grade ticked on `/kits-mg` should leave that category's own name
+ * alone.
+ */
+function gradeHeading(category: CategoryDetail, state: ListState): string | null {
+  if (category.type !== 'MODEL_KIT' || category.breadcrumbs.length > 1) return null;
+  if (state.filters.grade.length !== 1) return null;
+
+  return gradeNavLabel(state.filters.grade[0]);
+}
+
+/** The page chrome, rendered immediately — it depends only on the category and the URL. */
+function Shell({
+  category,
+  state,
+  children,
+}: {
+  category: CategoryDetail;
+  state: ListState;
+  children: ReactNode;
+}) {
+  const grade = gradeHeading(category, state);
+
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6 px-4 py-6 md:px-6">
       <div className="flex flex-col gap-2">
@@ -220,9 +258,14 @@ function Shell({ category, children }: { category: CategoryDetail; children: Rea
           crumbs={[
             { label: 'Home', href: '/' },
             ...category.breadcrumbs.map((crumb) => ({ label: crumb.name, href: `/${crumb.slug}` })),
+            // The grade is the current page, so `Breadcrumbs` renders it as text — the href is
+            // only the key, and the canonical URL is the honest thing to key it by.
+            ...(grade === null
+              ? []
+              : [{ label: grade, href: buildHref(`/${category.slug}`, state) }]),
           ]}
         />
-        <h1 className="text-3xl">{category.name}</h1>
+        <h1 className="text-3xl">{grade ?? category.name}</h1>
       </div>
 
       {children}

@@ -7,8 +7,10 @@ import { AccessLogMiddleware } from './common/middleware/access-log.middleware.j
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { ConfigModule } from './config/config.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
+import { CartModule } from './modules/cart/cart.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { SearchModule } from './modules/search/search.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 
@@ -20,6 +22,8 @@ import { PrismaModule } from './prisma/prisma.module.js';
     HealthModule,
     CatalogModule,
     SearchModule,
+    CartModule,
+    NotificationsModule,
     AdminModule,
     FallbackModule,
   ],

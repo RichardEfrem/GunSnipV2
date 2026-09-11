@@ -1,17 +1,21 @@
 import { serverApiFetch } from '@/lib/api-server';
 import {
+  buildRequirementsSchema,
   categoryDetailSchema,
   categoryTreeSchema,
   facetsSchema,
   homeContentSchema,
   productDetailSchema,
   productPageSchema,
+  relatedProductsSchema,
+  type BuildRequirement,
   type CategoryDetail,
   type CategoryNode,
   type Facets,
   type HomeContent,
   type ProductDetail,
   type ProductPage,
+  type RelatedProducts,
 } from './schema';
 
 /**
@@ -46,6 +50,26 @@ export async function fetchFacets(query: string): Promise<Facets> {
 export async function fetchProduct(slug: string): Promise<ProductDetail> {
   return serverApiFetch(`/products/${encodeURIComponent(slug)}`, {
     schema: productDetailSchema,
+    next: { revalidate: CATALOGUE_TTL_SECONDS, tags: ['catalogue'] },
+  });
+}
+
+/**
+ * A kit's build requirements (FR-PDP-08).
+ *
+ * Its own request rather than a field on the product, so the product page can stream the block
+ * in beside the gallery instead of making the whole page wait on a second join.
+ */
+export async function fetchRequirements(slug: string): Promise<BuildRequirement[]> {
+  return serverApiFetch(`/products/${encodeURIComponent(slug)}/requirements`, {
+    schema: buildRequirementsSchema,
+    next: { revalidate: CATALOGUE_TTL_SECONDS, tags: ['catalogue'] },
+  });
+}
+
+export async function fetchRelated(slug: string): Promise<RelatedProducts> {
+  return serverApiFetch(`/products/${encodeURIComponent(slug)}/related`, {
+    schema: relatedProductsSchema,
     next: { revalidate: CATALOGUE_TTL_SECONDS, tags: ['catalogue'] },
   });
 }

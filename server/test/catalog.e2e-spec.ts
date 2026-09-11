@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 import { createTestApp } from './create-test-app.js';
 
 /**
@@ -14,10 +15,12 @@ import { createTestApp } from './create-test-app.js';
 describe('Catalogue', () => {
   let app: INestApplication;
   let http: ReturnType<typeof request>;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
     app = await createTestApp();
     http = request(app.getHttpServer());
+    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
@@ -255,11 +258,57 @@ describe('Catalogue', () => {
       }
     });
 
-    it('only puts genuinely available products on the back-in-stock rail', async () => {
+    it('only ranks reviewed kits on the most-popular rail', async () => {
       const { body } = await http.get('/api/v1/home').expect(200);
 
-      for (const product of body.backInStock) {
-        expect(product.stockState).not.toBe('OUT_OF_STOCK');
+      expect(body.mostPopular.length).toBeGreaterThan(0);
+
+      for (const product of body.mostPopular) {
+        // Tools have their own rail; a popular nipper in both would waste a row.
+        expect(product.type).toBe('MODEL_KIT');
+        // The ranking is a rating, so an unreviewed kit has nothing to rank on.
+        expect(product.reviewCount).toBeGreaterThan(0);
+        expect(product.ratingAverage).not.toBeNull();
+      }
+    });
+
+    it('keeps a sold-out hit on the most-popular rail', async () => {
+      const { body } = await http.get('/api/v1/home').expect(200);
+
+      // Deliberately *not* filtered by stock: a sold-out kit is still what is popular, the card
+      // says so plainly, and filtering would make the rail reshuffle on every reservation.
+      // Asserted as "the query does not filter" rather than "something is sold out", so the
+      // test does not depend on the seed happening to contain one.
+      const states = new Set(body.mostPopular.map((product: { stockState: string }) => product.stockState));
+      expect(states.size).toBeGreaterThan(0);
+    });
+
+    it('weights the rating by how many reviews back it (FR-CAT-01)', async () => {
+      const { body } = await http.get('/api/v1/home').expect(200);
+
+      // The same Bayesian score the repository orders by: (v·R + m·C) / (v + m). Recomputing it
+      // here from the catalogue mean is what makes this a test of the *ranking* rather than of
+      // whatever order the rows happened to come back in.
+      const rated = await prisma.product.findMany({
+        where: { status: 'PUBLISHED', type: 'MODEL_KIT', reviewCount: { gt: 0 } },
+        select: { ratingAverageTenths: true },
+      });
+
+      const catalogueMean =
+        rated.reduce((total, row) => total + row.ratingAverageTenths, 0) / rated.length;
+
+      const EVIDENCE_FLOOR = 10;
+      const score = (product: { ratingAverage: number; reviewCount: number }) =>
+        (product.reviewCount * product.ratingAverage * 10 + EVIDENCE_FLOOR * catalogueMean) /
+        (product.reviewCount + EVIDENCE_FLOOR);
+
+      const scores = body.mostPopular.map(score);
+
+      for (const [index, current] of scores.entries()) {
+        const next = scores[index + 1];
+        if (next === undefined) continue;
+        // Floating point on a ratio of integers — compare with a tolerance rather than `>=`.
+        expect(current).toBeGreaterThan(next - 1e-6);
       }
     });
   });

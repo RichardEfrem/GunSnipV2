@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DIFFICULTIES, PRODUCT_TYPES, STOCK_STATES, TOOL_JOBS } from '@gunsnip/shared';
+import { DIFFICULTIES, NECESSITIES, PRODUCT_TYPES, STOCK_STATES, TOOL_JOBS } from '@gunsnip/shared';
 
 /**
  * The catalogue API's responses, as schemas.
@@ -94,6 +94,32 @@ export const productDetailSchema = productSummarySchema.extend({
 
 export type ProductDetail = z.infer<typeof productDetailSchema>;
 
+/**
+ * One row of "What you'll need to build this" (FR-PDP-08).
+ *
+ * `variantId` is nullable and the block reads it as the difference between a tickable row and
+ * an unavailable one — the server picks the variant, so a null here means "nothing on this tool
+ * is buyable" rather than "the client failed to choose".
+ */
+export const buildRequirementSchema = z.object({
+  necessity: z.enum(NECESSITIES),
+  reason: z.string().nullable(),
+  tool: productSummarySchema,
+  variantId: z.string().nullable(),
+});
+
+export type BuildRequirement = z.infer<typeof buildRequirementSchema>;
+
+export const buildRequirementsSchema = z.array(buildRequirementSchema);
+
+/** The two rails below the product page (FR-PDP-10). */
+export const relatedProductsSchema = z.object({
+  sameUnit: z.array(productSummarySchema),
+  sameSeries: z.array(productSummarySchema),
+});
+
+export type RelatedProducts = z.infer<typeof relatedProductsSchema>;
+
 /** Mirrors `Paginated<T>`. A factory, because the item schema differs per endpoint. */
 export function paginatedSchema<T extends z.ZodTypeAny>(item: T) {
   return z.object({
@@ -170,7 +196,7 @@ export const homeContentSchema = z.object({
     z.object({ code: z.string(), name: z.string(), productCount: z.int() }),
   ),
   newArrivals: z.array(productSummarySchema),
-  backInStock: z.array(productSummarySchema),
+  mostPopular: z.array(productSummarySchema),
   tools: z.array(productSummarySchema),
   firstBuild: z.array(productSummarySchema),
   banners: z.array(

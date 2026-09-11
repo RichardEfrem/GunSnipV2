@@ -4,6 +4,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { fetchHome } from '@/features/catalog/api';
 import { ProductRail } from '@/features/catalog/components/ProductRail';
 import type { HomeContent } from '@/features/catalog/schema';
+import { gradeHref } from '@/lib/navigation';
 
 /**
  * The home page (FR-CAT-01).
@@ -45,7 +46,7 @@ export default async function HomePage() {
           {content.gradeShortcuts.map((grade) => (
             <li key={grade.code}>
               <Link
-                href={`/kits?grade=${grade.code}`}
+                href={gradeHref(grade.code)}
                 className="reticle chamfer flex min-h-11 items-center gap-2 border border-armor-150 bg-armor-000 px-3 font-display text-sm font-semibold transition-colors duration-fast ease-out hover:border-core-blue"
               >
                 {grade.code}
@@ -68,7 +69,10 @@ export default async function HomePage() {
 
       <FirstBuild />
 
-      <ProductRail title="Back in stock" products={content.backInStock} href="/kits?inStock=true" />
+      {/* "See all" lands on the nearest sort the listing has. `top_rated` orders by the raw
+          average where the rail weights it by review count, so the listing's first row is a
+          close relative of the rail rather than a copy of it. */}
+      <ProductRail title="Most popular" products={content.mostPopular} href="/kits?sort=top_rated" />
       <ProductRail title="Tools and supplies" products={content.tools} href="/tools" />
 
       {content.banners.length === 0 ? null : (

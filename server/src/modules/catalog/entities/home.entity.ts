@@ -15,7 +15,8 @@ export interface HomeContent {
   /** The grade shortcut row — real navigation, not decoration (DESIGN.md §3.1). */
   gradeShortcuts: readonly GradeShortcut[];
   newArrivals: readonly ProductSummary[];
-  backInStock: readonly ProductSummary[];
+  /** Evidence-weighted rating, not units sold — see `ProductRepository.findMostPopular`. */
+  mostPopular: readonly ProductSummary[];
   tools: readonly ProductSummary[];
   /** Kits for the "First kit?" entry point: beginner-friendly, no glue, quick to build. */
   firstBuild: readonly ProductSummary[];

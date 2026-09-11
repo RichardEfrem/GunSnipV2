@@ -10,7 +10,7 @@ import { ReferenceRepository } from './reference.repository.js';
  * The home page (FR-CAT-01).
  *
  * Every rail is a query with an intent, and the intents are written down here rather than left
- * implicit in a sort parameter — "back in stock" is not "newest", and the difference is the
+ * implicit in a sort parameter — "most popular" is not "newest", and the difference is the
  * point of having the rail at all.
  */
 
@@ -18,9 +18,18 @@ import { ReferenceRepository } from './reference.repository.js';
 const RAIL_SIZE = 10;
 const BANNER_LIMIT = 4;
 
-/** A restock older than this is not news. Matches what the seed back-dates. */
-const RESTOCK_WINDOW_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * How many reviews a kit needs before the rail believes its rating.
+ *
+ * The weight the "Most popular" ranking gives the catalogue mean, in reviews. At ten, a kit
+ * with ten reviews is scored half on its own average and half on the catalogue's, and one with
+ * two hundred is scored almost entirely on its own. Low enough that a genuinely well-reviewed
+ * kit reaches the rail in its first month, high enough that a single five-star review cannot.
+ *
+ * A merchandising decision, so it lives here rather than in the repository — the repository is
+ * told what the floor is, and owns only how to rank by it.
+ */
+const RATING_EVIDENCE_FLOOR = 10;
 
 @Injectable()
 export class HomeService {
@@ -33,12 +42,15 @@ export class HomeService {
 
   async content(): Promise<HomeContent> {
     const now = new Date();
-    const restockedSince = new Date(now.getTime() - RESTOCK_WINDOW_DAYS * DAY_MS);
 
-    const [newArrivals, backInStock, tools, firstBuild, banners, grades, gradeCounts, categories] =
+    const [newArrivals, mostPopular, tools, firstBuild, banners, grades, gradeCounts, categories] =
       await Promise.all([
         this.products.findRail({ type: 'MODEL_KIT' }, 'newest', RAIL_SIZE),
-        this.products.findRecentlyRestocked(restockedSince, RAIL_SIZE),
+        // Popularity here means "well reviewed by enough people to mean it", not "most units
+        // shipped" — `units_sold` is already the `best_selling` sort, so a rail ordered by it
+        // would be the listing page's first row with a different heading. The evidence
+        // weighting is what makes this rail say something the sorts do not.
+        this.products.findMostPopular(RATING_EVIDENCE_FLOOR, RAIL_SIZE),
         this.products.findRail({ type: 'TOOL_SUPPLY' }, 'best_selling', RAIL_SIZE),
         // "Three kits, one tool, no glue" (DESIGN.md §3.1) — beginner difficulty is the honest
         // filter for that, and in-stock because recommending a first kit nobody can buy is
@@ -63,7 +75,7 @@ export class HomeService {
     return {
       gradeShortcuts: this.toShortcuts(grades, gradeCounts),
       newArrivals: summarise(newArrivals),
-      backInStock: summarise(backInStock),
+      mostPopular: summarise(mostPopular),
       tools: summarise(tools),
       firstBuild: summarise(firstBuild),
       banners,

@@ -6,14 +6,15 @@ import { randomFor } from '../random.ts';
  * sold, and which variants came back into stock recently.
  *
  * Both exist because a home page and a listing page cannot be built against a catalogue that
- * has never sold anything — FR-CAT-01's "back in stock" rail would be permanently empty and
- * FR-CAT-06's `best_selling` sort would tie every row. Neither is invented for decoration:
+ * has never sold anything — FR-CAT-06's `best_selling` sort would tie every row, and the stock
+ * history the Phase 9 admin screens read would start empty. Neither is invented for
+ * decoration:
  *
  *   `product.units_sold`   Phase 7 increments this on fulfilment. Seeded here so the sort and
  *                          the "1.2k sold" line on the card have something true-shaped to show.
  *   `inventory_movement`   A RESTOCK row is exactly what the Phase 9 admin stock adjustment
- *                          writes. The rail reads movements rather than a `restocked_at`
- *                          column so there is one source of truth for stock history.
+ *                          writes. Movements rather than a `restocked_at` column, so stock
+ *                          history has one source of truth.
  *
  * No `order` rows are created — orders are Phase 7, and a half-built order would be worse than
  * none. That does mean `units_sold` is not reconcilable against order lines until then, which
@@ -25,11 +26,11 @@ export interface HistoryResult {
   restocks: number;
 }
 
-/** Restocked within this window counts as "back in stock" on the home page. */
+/** How far back the seeded restock history spreads. */
 const RESTOCK_WINDOW_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Enough to fill the rail twice over, so it still has content after filtering out sold-out ones. */
+/** Enough movements to show a real ledger rather than a single row per screen. */
 const RESTOCK_COUNT = 12;
 
 export async function seedHistory(): Promise<HistoryResult> {
@@ -77,8 +78,9 @@ async function seedUnitsSold(): Promise<number> {
 }
 
 /**
- * Picks in-stock variants and back-dates a RESTOCK movement for each. Only in-stock ones: a
- * "back in stock" rail that links to something out of stock is worse than an empty rail.
+ * Picks in-stock variants and back-dates a RESTOCK movement for each — the stock history the
+ * Phase 9 admin adjustment screen lists. Only in-stock ones, so the movement and the variant
+ * it belongs to tell the same story.
  */
 async function seedRestocks(): Promise<number> {
   const variants = await prisma.productVariant.findMany({

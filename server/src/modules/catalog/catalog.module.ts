@@ -10,6 +10,9 @@ import { HomeService } from './home.service.js';
 import { ProductRepository } from './product.repository.js';
 import { ProductsController } from './products.controller.js';
 import { ReferenceRepository } from './reference.repository.js';
+import { RelatedService } from './related.service.js';
+import { RequirementRepository } from './requirement.repository.js';
+import { RequirementService } from './requirement.service.js';
 
 /**
  * The catalogue bounded context: browsing products, the taxonomy they hang off, and the home
@@ -28,11 +31,16 @@ import { ReferenceRepository } from './reference.repository.js';
     CategoryService,
     FacetService,
     HomeService,
+    RequirementService,
+    RelatedService,
     ProductRepository,
+    RequirementRepository,
     CategoryRepository,
     ReferenceRepository,
     HomeRepository,
   ],
-  exports: [CatalogService, CategoryService, FacetService],
+  // `RequirementService` is exported for the cart: adding a kit's tools in one action
+  // (FR-PDP-08) means the cart has to resolve the same list the product page showed.
+  exports: [CatalogService, CategoryService, FacetService, RequirementService],
 })
 export class CatalogModule {}

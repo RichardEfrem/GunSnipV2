@@ -5,10 +5,17 @@
  * (`kits-mg`, `tools-nippers`), so a category is one path segment at the root — see
  * `app/(storefront)/[category]/page.tsx`.
  *
+ * **Grade and series are filter URLs, not categories.** Both are facets, and a facet has to
+ * stay widenable from the rail: on `/kits-rg` the category *is* the scope, so every other grade
+ * counts zero and renders disabled (FR-CAT-10), and the only way out is the back button. On
+ * `/kits?grade=RG` the same rail counts each grade across the whole Kits tree and ticking
+ * Master Grade widens the set (FR-CAT-05), which is what DESIGN.md §3.2 draws. The home page's
+ * grade shortcuts already link this way. The `kits-*` categories still exist — they are where a
+ * product hangs in the taxonomy — they are just not the browse URL.
+ *
  * Still a static list. `GET /categories` returns this same shape and the header will read it
  * once the dropdowns need per-category counts; until then a request on every page render buys
- * nothing, because these six grades and ten tool categories are the ones that exist. The series
- * links are filter URLs rather than categories — series is a facet, not a branch of the tree.
+ * nothing, because these six grades and ten tool categories are the ones that exist.
  */
 
 export interface NavLink {
@@ -28,6 +35,43 @@ export interface NavItem {
   columns?: readonly NavColumn[];
 }
 
+export interface GradeNavEntry {
+  /** The `grade` reference table's code, which is what a URL carries (FR-CAT-07). */
+  code: string;
+  label: string;
+}
+
+/**
+ * The headline kit grades, ordered the way a builder progresses rather than alphabetically —
+ * the same order the `grade` table's `position` gives the filter rail.
+ *
+ * Six of the eleven grades. MGEX, FM, RE100, HIRM and MEGA are real and filterable, they are
+ * just too obscure to spend a menu slot on; "All grades" leads to the rail that lists them.
+ *
+ * Duplicating the labels here is the same trade the nav below already makes: a request on every
+ * render to learn that Real Grade is called "Real Grade" buys nothing. It is exported because
+ * the listing page titles itself from the selected grade, and two spellings of "Master Grade"
+ * would be one more thing to keep in step.
+ */
+export const GRADE_NAV: readonly GradeNavEntry[] = [
+  { code: 'EG', label: 'Entry Grade' },
+  { code: 'SD', label: 'Super Deformed' },
+  { code: 'HG', label: 'High Grade' },
+  { code: 'RG', label: 'Real Grade' },
+  { code: 'MG', label: 'Master Grade' },
+  { code: 'PG', label: 'Perfect Grade' },
+];
+
+/** The browse URL for one grade. One place, so the menu and the heading cannot disagree. */
+export function gradeHref(code: string): string {
+  return `/kits?grade=${encodeURIComponent(code)}`;
+}
+
+/** `null` for a grade with no menu entry — MGEX is filterable but has no headline label here. */
+export function gradeNavLabel(code: string): string | null {
+  return GRADE_NAV.find((grade) => grade.code === code)?.label ?? null;
+}
+
 /** Two columns, max two levels. Deeper menus are a sign the taxonomy is wrong. */
 export const PRIMARY_NAV: readonly NavItem[] = [
   {
@@ -37,12 +81,9 @@ export const PRIMARY_NAV: readonly NavItem[] = [
       {
         heading: 'By grade',
         links: [
-          { label: 'Entry Grade', href: '/kits-eg' },
-          { label: 'High Grade', href: '/kits-hg' },
-          { label: 'Real Grade', href: '/kits-rg' },
-          { label: 'Master Grade', href: '/kits-mg' },
-          { label: 'Perfect Grade', href: '/kits-pg' },
-          { label: 'SD and other', href: '/kits-sd' },
+          ...GRADE_NAV.map((grade) => ({ label: grade.label, href: gradeHref(grade.code) })),
+          // The rail on `/kits` lists all eleven; the six above are the ones worth a menu slot.
+          { label: 'All grades', href: '/kits' },
         ],
       },
       {

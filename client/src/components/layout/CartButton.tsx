@@ -1,5 +1,6 @@
 import { ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
+import { CART_TARGET_ATTRIBUTE } from '@/features/cart/cart-arc';
 
 /**
  * The cart affordance and its count (DESIGN.md §4.1).
@@ -17,6 +18,8 @@ export function CartButton({ count }: CartButtonProps) {
   return (
     <Link
       href="/cart"
+      // Where the add-to-cart arc lands (DESIGN.md §2.4).
+      {...{ [CART_TARGET_ATTRIBUTE]: '' }}
       className="reticle relative grid size-11 place-items-center rounded-sm text-white transition-colors duration-fast ease-out hover:text-core-blue"
     >
       <ShoppingCart className="size-5" aria-hidden />
