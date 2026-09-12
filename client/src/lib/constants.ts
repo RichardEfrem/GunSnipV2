@@ -10,6 +10,27 @@ export const SESSION_COOKIE = 'gs_session';
 /** A year, matching the server's `SESSION_COOKIE_MAX_AGE_DAYS` default. */
 export const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
+/**
+ * The back-office credential (PRD §11.2).
+ *
+ * Phase 0's admin guard compares a shared secret in the `x-admin-key` header, and that secret
+ * must never reach client JavaScript — so it lives in an httpOnly cookie that only Server
+ * Components and Server Actions read, and they attach the header on the operator's behalf
+ * (`lib/admin-api.ts`).
+ *
+ * Deliberately *not* an environment variable on the web app. The API already holds the key as
+ * `ADMIN_KEY`; a second copy in the storefront's environment would be a second thing to rotate
+ * and a second place to leak it from. Signing in is how the key gets here, and the API is what
+ * says whether it is right.
+ *
+ * Phase 1 replaces the contents of this cookie with a real session token. The cookie, the
+ * gate in `proxy.ts` and every screen behind it stay exactly as written.
+ */
+export const ADMIN_COOKIE = 'gs_admin';
+
+/** A working day. Short on purpose — this cookie carries a shared secret, not an identity. */
+export const ADMIN_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+
 /** Row 2 of the header collapses past this scroll offset (DESIGN.md §4.1). */
 export const HEADER_COLLAPSE_OFFSET = 200;
 

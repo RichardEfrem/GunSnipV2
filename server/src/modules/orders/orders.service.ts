@@ -45,7 +45,7 @@ export class OrdersService {
         by: auditActor(actor),
         note: 'Cancelled by the customer.',
         cancelReason: 'Cancelled by the customer before payment.',
-        isAbandoned: true,
+        stock: 'release',
       });
     });
 

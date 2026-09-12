@@ -60,6 +60,15 @@ export class AppConfig {
     return this.env.MAILER_TRANSPORT;
   }
 
+  /** Absolute or relative to the server package root, which is `process.cwd()` when Nest runs. */
+  get mediaDir(): string {
+    return this.env.MEDIA_DIR;
+  }
+
+  get mediaPublicPath(): string {
+    return this.env.MEDIA_PUBLIC_PATH;
+  }
+
   get areDevEndpointsEnabled(): boolean {
     return this.env.ENABLE_DEV_ENDPOINTS;
   }

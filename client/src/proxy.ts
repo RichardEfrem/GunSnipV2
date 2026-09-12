@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_SECONDS } from '@/lib/constants';
+import { ADMIN_COOKIE, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_SECONDS } from '@/lib/constants';
 
 /**
  * Mints the guest session cookie (PRD §11.1).
@@ -15,9 +15,14 @@ import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_SECONDS } from '@/lib/constants'
  * session, not an identity — `session_id` stays on the cart and order rows after login, which
  * is what makes adopting a guest cart possible at all.
  *
+ * It also gates the back office (PRD §11.2) — see `adminGate` below.
+ *
  * Renamed from `middleware.ts` in Next 16; the export must be named `proxy`.
  */
 export function proxy(request: NextRequest): NextResponse {
+  const gate = adminGate(request);
+  if (gate !== null) return gate;
+
   if (request.cookies.has(SESSION_COOKIE)) {
     return NextResponse.next();
   }
@@ -38,6 +43,45 @@ export function proxy(request: NextRequest): NextResponse {
   });
 
   return response;
+}
+
+const ADMIN_PREFIX = '/admin';
+const SIGN_IN = '/admin/sign-in';
+
+/**
+ * Keeps `/admin/*` behind the sign-in page, and the sign-in page away from anyone already in.
+ *
+ * The real authority is the API's `AdminGuard`, which checks the key on every request and would
+ * refuse an unauthenticated one regardless of what happens here. This is about not rendering a
+ * dashboard shell that is only going to fill with 401s — and about never leaving admin routes
+ * open on the client "because auth comes later", which CLAUDE.md rules out.
+ *
+ * The cookie's *presence* is all this can check: it is httpOnly and its value is a secret the
+ * proxy has no business validating. A stale or wrong key gets past here and is refused by the
+ * API, which the admin layout turns back into a redirect to sign in.
+ *
+ * Returns null when the request is not about admin at all, so the session-minting path below
+ * runs exactly as it did before.
+ */
+function adminGate(request: NextRequest): NextResponse | null {
+  const { pathname } = request.nextUrl;
+  if (!pathname.startsWith(ADMIN_PREFIX)) return null;
+
+  const isSignedIn = request.cookies.has(ADMIN_COOKIE);
+  const isSignInPage = pathname === SIGN_IN;
+
+  if (isSignedIn) {
+    return isSignInPage ? NextResponse.redirect(new URL(ADMIN_PREFIX, request.url)) : null;
+  }
+
+  if (isSignInPage) return null;
+
+  const signIn = new URL(SIGN_IN, request.url);
+  // Carried so signing in returns the operator to the page they asked for, rather than dropping
+  // them on the dashboard and making them navigate again.
+  signIn.searchParams.set('next', pathname + request.nextUrl.search);
+
+  return NextResponse.redirect(signIn);
 }
 
 export const config = {

@@ -57,7 +57,10 @@ async function main(): Promise<void> {
   // Reviews before history: sold counts are derived from review counts, so the aggregate has
   // to be written before anything reads it.
   const reviews = await seedReviews();
-  console.log(`  reviews     ${reviews.reviews} approved across ${reviews.reviewedProducts} products`);
+  console.log(
+    `  reviews     ${reviews.reviews} across ${reviews.reviewedProducts} products ` +
+      `(${reviews.pending} awaiting moderation)`,
+  );
 
   const history = await seedHistory();
   console.log(

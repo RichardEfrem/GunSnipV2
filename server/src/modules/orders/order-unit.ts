@@ -169,14 +169,22 @@ export class OrderUnit {
     return { orderId: order.id, paymentId: order.payment.id };
   }
 
-  /** Writes back the levels the stock rules computed, in id order like the locks. */
+  /**
+   * Writes back the levels the stock rules computed, in id order like the locks.
+   *
+   * **Both counters, always.** Reservation and release move only `stock_reserved`, so writing
+   * that alone was correct until dispatch existed — and silently wrong the moment it did:
+   * `consumeStock` drops `stock_on_hand` too, and a write that ignored it would give the units
+   * back to the shelf while marking the order shipped. Writing both is correct for every
+   * caller, because a rule that did not change a counter returns the value read under the lock.
+   */
   async writeStockLevels(levels: readonly StockLevel[]): Promise<void> {
     const sorted = [...levels].sort((a, b) => (a.variantId < b.variantId ? -1 : 1));
 
     for (const level of sorted) {
       await this.tx.productVariant.update({
         where: { id: level.variantId },
-        data: { stockReserved: level.stockReserved },
+        data: { stockOnHand: level.stockOnHand, stockReserved: level.stockReserved },
       });
     }
   }
@@ -229,6 +237,7 @@ export class OrderUnit {
         status: change.to,
         ...(change.cancelReason === undefined ? {} : { cancelReason: change.cancelReason }),
         ...(change.paidAt === undefined ? {} : { paidAt: change.paidAt }),
+        ...(change.deliveredAt === undefined ? {} : { deliveredAt: change.deliveredAt }),
       },
     });
 
@@ -242,6 +251,49 @@ export class OrderUnit {
         note: change.note,
       },
     });
+  }
+
+  /**
+   * The audit half of dispatch (PRD §8.3, FR-ADM-05): one `ORDER_FULFILLED` movement per line,
+   * carrying the order it shipped for, and the catalogue's `units_sold` counter advanced by the
+   * same quantities.
+   *
+   * The levels themselves are written by `writeStockLevels` from what `consumeStock` returned —
+   * this records *why* they moved. Splitting the two is what keeps the arithmetic a pure
+   * function that can be tested without a database.
+   */
+  async recordFulfilment(
+    orderId: string,
+    items: readonly { variantId: string; quantity: number }[],
+    by: AuditActor,
+  ): Promise<void> {
+    if (items.length === 0) return;
+
+    await this.tx.inventoryMovement.createMany({
+      data: items.map((item) => ({
+        variantId: item.variantId,
+        // A movement is a delta, and stock leaving is negative.
+        delta: -item.quantity,
+        reason: 'ORDER_FULFILLED' as const,
+        actorKind: by.actorKind,
+        actorId: by.actorId,
+        orderId,
+      })),
+    });
+
+    // Grouped first, so a line that appears twice on one order counts once as a single update
+    // rather than racing itself.
+    const soldByVariant = new Map<string, number>();
+    for (const item of items) {
+      soldByVariant.set(item.variantId, (soldByVariant.get(item.variantId) ?? 0) + item.quantity);
+    }
+
+    for (const [variantId, quantity] of [...soldByVariant].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      await this.tx.product.updateMany({
+        where: { variants: { some: { id: variantId } } },
+        data: { unitsSold: { increment: quantity } },
+      });
+    }
   }
 
   /**
@@ -324,6 +376,8 @@ export interface StatusChange {
   cancelReason?: string;
   /** Set when the change is the payment settling, so `paid_at` and the status move together. */
   paidAt?: Date;
+  /** Set when the order is marked delivered (FR-ADM-08), which is what a review invite dates from. */
+  deliveredAt?: Date;
 }
 
 /** A payment row read under its order's lock, and what settling it needs to know. */

@@ -27,6 +27,15 @@ export const envSchema = z.object({
 
   MAILER_TRANSPORT: z.enum(['console']).default('console'),
 
+  /**
+   * Where uploaded product images are written (FR-ADM-04), and the URL prefix they are served
+   * under. The default writes into the web app's `public/`, which is where the seed's generated
+   * placeholders already go — one media convention for seeded and uploaded images alike, and the
+   * only directory Next serves statically. A CDN later changes these two values and nothing else.
+   */
+  MEDIA_DIR: z.string().min(1).default('../client/public/media/products'),
+  MEDIA_PUBLIC_PATH: z.string().startsWith('/').default('/media/products'),
+
   /** Gates POST /dev/payments/:id/simulate and friends (FR-PAY-05). */
   ENABLE_DEV_ENDPOINTS: z.stringbool().default(false),
 

@@ -12,9 +12,11 @@ import { CartModule } from './modules/cart/cart.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { DevModule } from './modules/dev/dev.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
+import { ReviewsModule } from './modules/reviews/reviews.module.js';
 import { SearchModule } from './modules/search/search.module.js';
 import { ShippingModule } from './modules/shipping/shipping.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -33,6 +35,8 @@ import { PrismaModule } from './prisma/prisma.module.js';
     ShippingModule,
     OrdersModule,
     PaymentsModule,
+    InventoryModule,
+    ReviewsModule,
     NotificationsModule,
     DevModule,
     AdminModule,

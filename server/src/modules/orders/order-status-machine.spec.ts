@@ -60,3 +60,11 @@ describe('order state machine', () => {
     }
   });
 });
+
+describe('the default refusal message', () => {
+  it('reads as a sentence, not as a bug in the shop', () => {
+    // "A order cannot move…" is what an operator sees when they try an illegal transition, so
+    // the article is part of the behaviour rather than a detail of the template.
+    expect(() => assertOrderTransition('PAID', 'SHIPPED')).toThrow('An order cannot move from PAID to SHIPPED.');
+  });
+});

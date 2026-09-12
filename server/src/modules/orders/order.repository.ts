@@ -25,6 +25,7 @@ const ORDER_SELECT = {
   status: true,
   customerSnapshot: true,
   customerNote: true,
+  internalNote: true,
   cancelReason: true,
   shippingTier: true,
   shippingMinDays: true,
@@ -50,8 +51,14 @@ const ORDER_SELECT = {
     orderBy: [{ productNameSnapshot: 'asc' }, { id: 'asc' }],
   },
   events: {
-    select: { toStatus: true, note: true, createdAt: true },
+    // `actorKind`/`actorId` are selected for the whole application and dropped by
+    // `toOrderView` — the customer's timeline must not say which session cancelled their order.
+    // The admin mapper keeps them (FR-ORD-06).
+    select: { toStatus: true, note: true, createdAt: true, actorKind: true, actorId: true },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  },
+  shipment: {
+    select: { courier: true, trackingNumber: true, estimatedDays: true, shippedAt: true, deliveredAt: true },
   },
   payment: {
     select: { method: true, status: true, amountIdr: true, expiresAt: true, providerRef: true, instructions: true },
@@ -81,6 +88,19 @@ export interface PaymentSummary {
   amountIdr: number;
   providerRef: string | null;
 }
+
+const ADMIN_LIST_SELECT = {
+  id: true,
+  orderNumber: true,
+  status: true,
+  customerSnapshot: true,
+  totalIdr: true,
+  placedAt: true,
+  payment: { select: { status: true } },
+  _count: { select: { items: true } },
+} satisfies Prisma.OrderSelect;
+
+export type AdminOrderRow = Prisma.OrderGetPayload<{ select: typeof ADMIN_LIST_SELECT }>;
 
 export interface IdempotencyRecord {
   sessionId: string;
@@ -151,6 +171,49 @@ export class OrderRepository {
       amountIdr: row.amountIdr,
       providerRef: row.providerRef,
     };
+  }
+
+  // ------------------------------------------------------------------- back office (FR-ADM-07)
+
+  /**
+   * A page of orders for the operator, newest first, one row past the page so the cursor can be
+   * trusted (`toCursorPage`).
+   */
+  async listAdmin(where: Prisma.OrderWhereInput, take: number): Promise<AdminOrderRow[]> {
+    return this.prisma.order.findMany({
+      where,
+      orderBy: [{ placedAt: 'desc' }, { id: 'desc' }],
+      take,
+      select: ADMIN_LIST_SELECT,
+    });
+  }
+
+  /**
+   * Sets or replaces the shipment record (FR-ADM-08).
+   *
+   * Upsert, because a courier can be chosen before dispatch and a tracking number typed in
+   * afterwards, and neither order of events should need a different endpoint. `estimatedDays` is
+   * seeded from the window quoted at checkout so the record starts out agreeing with the promise
+   * already made to the customer (FR-CO-09).
+   */
+  async setShipment(
+    orderId: string,
+    shipment: { courier: string; trackingNumber: string | null; estimatedDays: number },
+  ): Promise<void> {
+    await this.prisma.shipment.upsert({
+      where: { orderId },
+      create: { orderId, ...shipment },
+      update: { courier: shipment.courier, trackingNumber: shipment.trackingNumber },
+    });
+  }
+
+  async setInternalNote(orderId: string, internalNote: string | null): Promise<void> {
+    await this.prisma.order.update({ where: { id: orderId }, data: { internalNote } });
+  }
+
+  /** Stamps the shipment's own dates alongside the order's status change (FR-ADM-08). */
+  async stampShipment(orderId: string, dates: { shippedAt?: Date; deliveredAt?: Date }): Promise<void> {
+    await this.prisma.shipment.updateMany({ where: { orderId }, data: dates });
   }
 
   async findIdempotencyKey(scope: string, key: string): Promise<IdempotencyRecord | null> {

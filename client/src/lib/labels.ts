@@ -1,4 +1,15 @@
-import type { OrderStatus, PaymentMethod, PaymentStatus, ShippingTier, ShippingZone } from '@gunsnip/shared';
+import type {
+  Difficulty,
+  InventoryMovementReason,
+  Necessity,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  ShippingTier,
+  ShippingZone,
+  ToolJob,
+  VoucherType,
+} from '@gunsnip/shared';
 
 /**
  * Words for the enums the API sends, used by more than one feature — the cart names a zone,
@@ -50,4 +61,49 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   CANCELLED: 'Cancelled',
   EXPIRED: 'Expired',
   REFUNDED: 'Refunded',
+};
+
+export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  BEGINNER: 'Beginner',
+  INTERMEDIATE: 'Intermediate',
+  ADVANCED: 'Advanced',
+  EXPERT: 'Expert',
+};
+
+export const NECESSITY_LABELS: Record<Necessity, string> = {
+  REQUIRED: 'Required',
+  RECOMMENDED: 'Recommended',
+  OPTIONAL: 'Optional',
+};
+
+/** The job a tool does (PRD §5.1) — the top level of the tools taxonomy. */
+export const TOOL_JOB_LABELS: Record<ToolJob, string> = {
+  CUTTING: 'Cutting',
+  SHAPING: 'Shaping',
+  PAINTING: 'Painting',
+  ADHESIVE: 'Adhesive',
+  FINISHING: 'Finishing',
+  DECAL_AIDS: 'Decal aids',
+  DISPLAY: 'Display',
+  STORAGE: 'Storage',
+  WORKSPACE: 'Workspace',
+};
+
+/**
+ * Why stock moved (FR-ADM-05). Worded from the operator's side — "Received" is what they did,
+ * `RESTOCK` is what the column calls it.
+ */
+export const MOVEMENT_REASON_LABELS: Record<InventoryMovementReason, string> = {
+  RESTOCK: 'Received',
+  CORRECTION: 'Stock count correction',
+  DAMAGE: 'Damaged',
+  LOSS: 'Lost',
+  RETURN: 'Returned by customer',
+  ORDER_FULFILLED: 'Shipped on an order',
+};
+
+export const VOUCHER_TYPE_LABELS: Record<VoucherType, string> = {
+  PERCENTAGE: 'Percentage off',
+  FIXED_AMOUNT: 'Fixed amount off',
+  FREE_SHIPPING: 'Free shipping',
 };

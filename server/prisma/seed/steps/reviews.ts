@@ -10,16 +10,20 @@ import {
 import { randomFor } from '../random.ts';
 
 /**
- * Approved reviews, and the two counters on `product` that are derived from them.
+ * Reviews, and the two counters on `product` that are derived from them.
  *
  * The product card prints `★ 4.8 (142)` (DESIGN.md §3.4) and one of the six sorts orders by
  * rating (FR-CAT-06), so a catalogue with no reviews cannot exercise either — nor the rating
  * filter, the histogram, or the "no reviews yet" state.
  *
- * Every review here is `APPROVED` and **not** a verified purchase: no orders exist yet, and
- * claiming a verified badge without an order line behind it would make the badge a decoration
- * rather than the fact FR-REV-02 defines it as. Phase 10 wires the real invite flow, which is
- * what produces verified ones.
+ * Most are `APPROVED`, and **a handful are left `PENDING`** so the moderation queue (FR-ADM-11)
+ * has something in it. A back office whose queue is empty on a fresh seed cannot be demonstrated
+ * or tested, and the pending ones are excluded from the counters for the same reason the
+ * application excludes them: only approved reviews are visible, so only approved reviews count.
+ *
+ * None is a verified purchase: the seeded orders are not tied to these rows, and claiming a
+ * verified badge without an order line behind it would make the badge a decoration rather than
+ * the fact FR-REV-02 defines it as. Phase 10 wires the real invite flow.
  *
  * `reviewCount` and `ratingAverageTenths` are written here rather than left at zero because
  * they are denormalised counters, and a seed that inserts reviews without updating them would
@@ -36,10 +40,21 @@ interface ReviewSeedProduct {
 export interface ReviewResult {
   reviews: number;
   reviewedProducts: number;
+  /** Left awaiting moderation, so the Phase 9 queue is never empty on a fresh seed. */
+  pending: number;
 }
 
 /** Roughly one product in six has none, so the empty state is reachable from the storefront. */
 const UNREVIEWED_CHANCE = 1 / 6;
+
+/**
+ * How often a review is left awaiting moderation (FR-ADM-11).
+ *
+ * Low, because a queue holding a tenth of every review is a shop with a moderation problem
+ * rather than a shop with a moderation screen — but non-zero on every reseed, which is what the
+ * admin queue and its integration tests need.
+ */
+const PENDING_CHANCE = 1 / 12;
 
 export async function seedReviews(): Promise<ReviewResult> {
   const products = await prisma.product.findMany({
@@ -49,31 +64,36 @@ export async function seedReviews(): Promise<ReviewResult> {
 
   let reviews = 0;
   let reviewedProducts = 0;
+  let pending = 0;
 
   for (const product of products) {
     const written = await createReviewsFor(product);
 
-    reviews += written;
-    if (written > 0) reviewedProducts += 1;
+    reviews += written.approved + written.pending;
+    pending += written.pending;
+    if (written.approved > 0) reviewedProducts += 1;
   }
 
-  return { reviews, reviewedProducts };
+  return { reviews, reviewedProducts, pending };
 }
 
-async function createReviewsFor(product: ReviewSeedProduct): Promise<number> {
+async function createReviewsFor(product: ReviewSeedProduct): Promise<{ approved: number; pending: number }> {
   const random = randomFor(`reviews:${product.slug}`);
 
   if (random.chance(UNREVIEWED_CHANCE)) {
-    return 0;
+    return { approved: 0, pending: 0 };
   }
 
   const tones = product.type === 'MODEL_KIT' ? KIT_REVIEW_TONES : TOOL_REVIEW_TONES;
   const count = random.int(3, 26);
   const ratings: number[] = [];
+  let pending = 0;
 
   for (let index = 0; index < count; index += 1) {
     const tone = pickTone(tones, random.next());
     const rating = random.pick(tone.ratings);
+    const isPending = random.chance(PENDING_CHANCE);
+    const createdAt = reviewDate(random);
 
     await prisma.review.create({
       data: {
@@ -86,25 +106,30 @@ async function createReviewsFor(product: ReviewSeedProduct): Promise<number> {
         rating,
         title: random.pick(tone.titles),
         body: random.pick(tone.bodies),
-        status: 'APPROVED',
+        status: isPending ? 'PENDING' : 'APPROVED',
+        // Null while pending: nobody has looked at it yet, and a moderation date on an
+        // unmoderated review is a lie the queue would then have to explain.
+        moderatedAt: isPending ? null : createdAt,
         isVerifiedPurchase: false,
         ...kitFields(product, rating, random),
-        createdAt: reviewDate(random),
+        createdAt,
       },
     });
 
-    ratings.push(rating);
+    if (isPending) pending += 1;
+    else ratings.push(rating);
   }
 
   await prisma.product.update({
     where: { id: product.id },
     data: {
+      // Approved only — the same rule `ratingAggregate` applies when a review is moderated.
       reviewCount: ratings.length,
-      ratingAverageTenths: averageTenths(ratings),
+      ratingAverageTenths: ratings.length === 0 ? 0 : averageTenths(ratings),
     },
   });
 
-  return ratings.length;
+  return { approved: ratings.length, pending };
 }
 
 /**

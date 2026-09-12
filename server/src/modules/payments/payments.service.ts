@@ -139,7 +139,9 @@ export class PaymentsService {
           by,
           note: outcome.note,
           cancelReason: outcome.cancelReason,
-          isAbandoned: outcome.isAbandoned,
+          // A payment outcome never dispatches goods, so its stock effect is only ever "give
+          // the reservation back" or "leave it alone" — never "consume".
+          stock: outcome.isAbandoned ? 'release' : 'hold',
           paidAt: to === 'PAID' ? event.occurredAt : undefined,
         });
       }

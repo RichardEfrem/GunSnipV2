@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { useAddToCart } from '@/features/cart/hooks/use-add-to-cart';
 import { cn } from '@/lib/cn';
 import { formatIdr } from '@/lib/formatters';
+import { NECESSITY_LABELS } from '@/lib/labels';
 import type { BuildRequirement } from '../schema';
 
 /**
@@ -32,12 +33,6 @@ interface BuildRequirementsProps {
   /** Variant ids the actor's cart already holds, from the server (FR-PDP-08). */
   inCartVariantIds: readonly string[];
 }
-
-const NECESSITY_LABELS: Record<Necessity, string> = {
-  REQUIRED: 'Required',
-  RECOMMENDED: 'Recommended',
-  OPTIONAL: 'Optional',
-};
 
 /**
  * Weight and tone, not accent colour. Red is money and purchase intent only and blue is

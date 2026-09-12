@@ -4,6 +4,7 @@ import { PaymentProviderModule } from '../payments/provider/payment-provider.mod
 import { ShippingModule } from '../shipping/shipping.module.js';
 import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
+import { OrderFulfilmentService } from './order-fulfilment.service.js';
 import { OrderPlacementService } from './order-placement.service.js';
 import { OrderRateLimitGuard } from './order-rate-limit.guard.js';
 import { OrderRepository } from './order.repository.js';
@@ -23,11 +24,23 @@ import { OrdersService } from './orders.service.js';
  * — one row per order, cascade-deleted with it, never written without its order's lock — so
  * settling one runs in *this* module's transaction rather than a second one that would then have
  * to be coordinated with it.
+ *
+ * `OrderFulfilmentService` (FR-ADM-07, FR-ADM-08) is exported for the admin controllers. It is
+ * here rather than there because advancing an order is an order rule: it goes through the same
+ * `transitionOrder` the buyer's cancel button and the expiry sweep use, so an operator shipping
+ * an order and a customer cancelling one settle stock and vouchers by the identical code.
  */
 @Module({
   imports: [ShippingModule, RateLimitModule, PaymentProviderModule],
   controllers: [CheckoutController, OrdersController],
-  providers: [CheckoutService, OrderPlacementService, OrdersService, OrderRepository, OrderRateLimitGuard],
-  exports: [OrderRepository],
+  providers: [
+    CheckoutService,
+    OrderPlacementService,
+    OrdersService,
+    OrderFulfilmentService,
+    OrderRepository,
+    OrderRateLimitGuard,
+  ],
+  exports: [OrderRepository, OrderFulfilmentService],
 })
 export class OrdersModule {}

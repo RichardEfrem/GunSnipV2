@@ -1,4 +1,4 @@
-import type { Difficulty } from '@gunsnip/shared';
+import { DIFFICULTY_LABELS } from '@/lib/labels';
 import type { ProductDetail } from '../schema';
 
 /**
@@ -14,13 +14,6 @@ import type { ProductDetail } from '../schema';
 interface ProductSpecsProps {
   product: ProductDetail;
 }
-
-const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  BEGINNER: 'Beginner',
-  INTERMEDIATE: 'Intermediate',
-  ADVANCED: 'Advanced',
-  EXPERT: 'Expert',
-};
 
 export function ProductSpecs({ product }: ProductSpecsProps) {
   const rows = specRows(product);

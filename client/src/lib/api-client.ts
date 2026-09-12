@@ -14,7 +14,13 @@ import { env } from './env';
 export interface ApiRequest<T> {
   schema: ZodType<T>;
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
-  /** Serialised as JSON. Query strings belong in `path`. */
+  /**
+   * Serialised as JSON, unless it is a `FormData` — which is sent as-is so the browser writes
+   * its own multipart boundary. Admin image upload (FR-ADM-04) is the only caller that needs
+   * that, and it needs it to work rather than to be JSON-stringified into `"[object FormData]"`.
+   *
+   * Query strings belong in `path`.
+   */
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -24,6 +30,7 @@ export interface ApiRequest<T> {
 
 export async function apiFetch<T>(path: string, request: ApiRequest<T>): Promise<T> {
   const { schema, method = 'GET', body, headers, ...init } = request;
+  const isMultipart = typeof FormData !== 'undefined' && body instanceof FormData;
 
   let response: Response;
 
@@ -36,10 +43,12 @@ export async function apiFetch<T>(path: string, request: ApiRequest<T>): Promise
       // looks like a new one.
       credentials: 'include',
       headers: {
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        // Never set for multipart: the boundary is part of the value and only `fetch` knows it,
+        // so naming the type by hand produces a body the server cannot parse.
+        ...(body === undefined || isMultipart ? {} : { 'Content-Type': 'application/json' }),
         ...headers,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isMultipart ? (body as FormData) : JSON.stringify(body),
     });
   } catch (cause) {
     throw ApiError.network(cause);
