@@ -11,8 +11,8 @@ export interface PlaceOrderBody {
   address: { regionId: string; postalCode: string; street: string; notes?: string };
   shippingTier: ShippingTier;
   paymentMethod: PaymentMethod;
-  /** The lines the summary showed — variants and counts, never prices. */
-  items: { variantId: string; quantity: number }[];
+  /** The lines the summary showed — cart lines and counts, never prices. */
+  items: { cartLineId: string; quantity: number }[];
   /** The total the summary showed. The server compares it and never charges it. */
   expectedTotalIdr: number;
 }

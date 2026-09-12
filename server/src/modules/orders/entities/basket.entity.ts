@@ -19,6 +19,14 @@ export interface BasketLine {
   requestedQuantity: number;
   priceAtAddIdr: number;
 
+  /**
+   * The bundle this line was added as part of (FR-CAT-11), or null for an ordinary line.
+   *
+   * Carried onto the order as a snapshot so the components can be grouped back into the one line
+   * the customer chose, long after the bundle itself may have been retired.
+   */
+  bundle: { id: string; name: string; slug: string } | null;
+
   variantId: string;
   sku: string;
   variantName: string | null;

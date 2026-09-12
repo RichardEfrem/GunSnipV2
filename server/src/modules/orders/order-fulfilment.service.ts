@@ -4,6 +4,7 @@ import { NotFoundError } from '../../common/errors/not-found.error.js';
 import { type CursorPage, toCursorPage } from '../../common/pagination/cursor-page.js';
 import { decodeCursor, encodeCursor } from '../../common/pagination/keyset-cursor.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { OrderMailService } from '../notifications/order-mail.service.js';
 import { toAdminOrderSummary, toAdminOrderView } from './admin-order-mapper.js';
 import { ADMIN_AUDIT } from './audit-actor.js';
 import type {
@@ -37,7 +38,10 @@ import { OrderRepository, type OrderRecord } from './order.repository.js';
  */
 @Injectable()
 export class OrderFulfilmentService {
-  constructor(private readonly orders: OrderRepository) {}
+  constructor(
+    private readonly orders: OrderRepository,
+    private readonly mail: OrderMailService,
+  ) {}
 
   async list(query: ListAdminOrdersDto): Promise<CursorPage<AdminOrderSummary>> {
     const limit = query.limit ?? DEFAULT_ADMIN_ORDER_PAGE_SIZE;
@@ -98,6 +102,11 @@ export class OrderFulfilmentService {
     // dispatch that already consumed stock.
     if (effect.stampsShippedAt === true) await this.orders.stampShipment(record.id, { shippedAt: now });
     if (effect.stampsDeliveredAt === true) await this.orders.stampShipment(record.id, { deliveredAt: now });
+
+    // After the commit, never inside it: a mail server that is down must not roll back a
+    // dispatch that physically happened (FR-NOTIF-01). Which statuses are worth a mail is
+    // `ORDER_MAIL`'s decision, not this one's — it reports what changed.
+    await this.mail.notify(record.id, dto.status);
 
     return this.detail(orderNumber);
   }

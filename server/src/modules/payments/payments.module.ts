@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PaymentExpiryJob } from './payment-expiry.job.js';
 import { PaymentsService } from './payments.service.js';
@@ -15,7 +16,7 @@ import { PaymentProviderModule } from './provider/payment-provider.module.js';
  * out of a cycle.
  */
 @Module({
-  imports: [OrdersModule, PaymentProviderModule],
+  imports: [OrdersModule, PaymentProviderModule, NotificationsModule],
   providers: [PaymentsService, PaymentExpiryJob],
   exports: [PaymentsService],
 })

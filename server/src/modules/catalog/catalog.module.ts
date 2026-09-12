@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { BannerAdminService } from './banner-admin.service.js';
 import { BannerRepository } from './banner.repository.js';
+import { BundleRepository } from './bundle.repository.js';
+import { BundleService } from './bundle.service.js';
+import { BundlesController } from './bundles.controller.js';
 import { CatalogService } from './catalog.service.js';
 import { CategoriesController } from './categories.controller.js';
 import { CategoryRepository } from './category.repository.js';
@@ -35,12 +38,13 @@ import { VariantAdminService } from './variant-admin.service.js';
  * to carry the identical filter rail, which means the identical counts from the identical code.
  */
 @Module({
-  controllers: [ProductsController, CategoriesController, HomeController],
+  controllers: [ProductsController, CategoriesController, HomeController, BundlesController],
   providers: [
     CatalogService,
     CategoryService,
     FacetService,
     HomeService,
+    BundleService,
     RequirementService,
     RelatedService,
     ProductRepository,
@@ -48,6 +52,7 @@ import { VariantAdminService } from './variant-admin.service.js';
     CategoryRepository,
     ReferenceRepository,
     HomeRepository,
+    BundleRepository,
 
     // The write half (FR-ADM-02 … FR-ADM-06, FR-ADM-09, FR-ADM-12). It lives here rather than in
     // the admin module because these are the catalogue's rules — what a product may be, which
@@ -71,6 +76,9 @@ import { VariantAdminService } from './variant-admin.service.js';
     CategoryService,
     FacetService,
     RequirementService,
+    // Exported for the cart: adding a bundle (FR-CAT-11) has to resolve the same components,
+    // the same availability and the same allocated prices the bundle card showed.
+    BundleService,
     ProductAdminService,
     VariantAdminService,
     ImageAdminService,

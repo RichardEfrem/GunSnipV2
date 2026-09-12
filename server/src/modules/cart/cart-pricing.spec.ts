@@ -28,6 +28,7 @@ function line(overrides: Partial<CartLine> = {}): CartLine {
     image: null,
     unitPriceIdr,
     lineTotalIdr: lineTotal(unitPriceIdr, quantity),
+    bundle: null,
     stockState: 'IN_STOCK',
     availableQuantity: 10,
     ...overrides,

@@ -56,7 +56,7 @@ export interface OrderBody {
   address: { regionId: string; postalCode: string; street: string; notes?: string };
   shippingTier: string;
   paymentMethod: string;
-  items: { variantId: string; quantity: number }[];
+  items: { cartLineId: string; quantity: number }[];
   expectedTotalIdr: number;
 }
 
@@ -65,7 +65,7 @@ export interface OrderBody {
  * unchanged. Built from a real quote so each spec exercises the same round trip the page does.
  */
 export function orderBodyFrom(
-  quoteBody: { lines: { variantId: string; quantity: number }[]; totals: { totalIdr: number } },
+  quoteBody: { lines: { cartLineId: string; quantity: number }[]; totals: { totalIdr: number } },
   regionId: string,
   overrides: Partial<OrderBody> = {},
 ): OrderBody {
@@ -74,7 +74,7 @@ export function orderBodyFrom(
     address: { regionId, postalCode: '12110', street: 'Jl. Senopati No. 79', notes: 'Leave with security' },
     shippingTier: 'REGULAR',
     paymentMethod: 'VIRTUAL_ACCOUNT',
-    items: quoteBody.lines.map((line) => ({ variantId: line.variantId, quantity: line.quantity })),
+    items: quoteBody.lines.map((line) => ({ cartLineId: line.cartLineId, quantity: line.quantity })),
     expectedTotalIdr: quoteBody.totals.totalIdr,
     ...overrides,
   };

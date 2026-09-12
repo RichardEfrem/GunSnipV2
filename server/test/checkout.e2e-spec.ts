@@ -337,10 +337,13 @@ describe('Checkout', () => {
     });
 
     it('refuses a line that is not in the cart', async () => {
-      const { nipper, liner } = await buildTools(http);
+      const { nipper } = await buildTools(http);
       const { session, quoted } = await readyToOrder([{ variantId: nipper, quantity: 1 }]);
 
-      const body = orderBodyFrom(quoted, jakarta, { items: [{ variantId: liner, quantity: 1 }] });
+      // A cart line id this session does not own. Lines are named by cart line rather than by
+      // variant (FR-CAT-11 lets one variant be in the cart twice), so this is what "a line that
+      // is not in the cart" now looks like.
+      const body = orderBodyFrom(quoted, jakarta, { items: [{ cartLineId: randomUUID(), quantity: 1 }] });
       expect((await placeOrder(http, session, body).expect(409)).body.error.code).toBe('CART_CHANGED');
     });
 

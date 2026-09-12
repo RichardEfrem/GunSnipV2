@@ -64,6 +64,11 @@ export function draftOrder(input: DraftInput): OrderDraft {
 
     items: input.lines.map(({ basketLine, quantity, lineTotalIdr }) => ({
       variantId: basketLine.variantId,
+      // The bundle the line was bought as part of, plus its name written down beside it
+      // (FR-CAT-11, FR-ORD-05). The id may go away when a bundle is retired; the name is what
+      // keeps the components grouped on the order screen afterwards.
+      bundleId: basketLine.bundle?.id ?? null,
+      bundleNameSnapshot: basketLine.bundle?.name ?? null,
       productNameSnapshot: basketLine.productName,
       variantNameSnapshot: basketLine.variantName,
       skuSnapshot: basketLine.sku,

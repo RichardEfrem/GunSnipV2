@@ -39,9 +39,16 @@ export interface QuotedLines {
   unavailableCount: number;
 }
 
-/** A line as the client confirms it: which variant, how many. Never a price. */
+/**
+ * A line as the client confirms it: **which cart line**, how many. Never a price.
+ *
+ * The cart line, not the variant. A variant can legitimately be in the cart twice once bundles
+ * exist (FR-CAT-11) — a loose nipper and the nipper inside a starter bundle are two lines at two
+ * different prices — so a variant id no longer identifies one line, and matching on it would
+ * order the wrong one at the wrong price.
+ */
 export interface RequestedLine {
-  variantId: string;
+  cartLineId: string;
   quantity: number;
 }
 
@@ -80,10 +87,10 @@ export function quotableLines(basket: Basket | null): QuotedLines {
  */
 export function orderableLines(basket: Basket, requested: readonly RequestedLine[]): OrderLine[] {
   return requested.map((request) => {
-    const line = basket.lines.find((candidate) => candidate.variantId === request.variantId);
+    const line = basket.lines.find((candidate) => candidate.cartLineId === request.cartLineId);
 
     if (line === undefined || request.quantity > line.requestedQuantity) {
-      throw new CartChangedError(request.variantId);
+      throw new CartChangedError({ cartLineId: request.cartLineId });
     }
 
     if (!line.isSellable) {

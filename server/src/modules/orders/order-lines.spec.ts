@@ -54,7 +54,7 @@ describe('quotableLines', () => {
 describe('orderableLines', () => {
   it('orders what the customer confirmed, priced from the variant', () => {
     const lines = orderableLines(basket([EXIA, { ...NIPPER, requestedQuantity: 2 }]), [
-      { variantId: 'nipper', quantity: 2 },
+      { cartLineId: 'line-nipper', quantity: 2 },
     ]);
 
     expect(lines).toHaveLength(1);
@@ -62,20 +62,39 @@ describe('orderableLines', () => {
   });
 
   it('accepts less than the cart holds — the quantity a short line was quoted at', () => {
-    const lines = orderableLines(basket([basketLine({ requestedQuantity: 5 })]), [{ variantId: 'exia', quantity: 3 }]);
+    const lines = orderableLines(basket([basketLine({ requestedQuantity: 5 })]), [{ cartLineId: 'line-exia', quantity: 3 }]);
     expect(lines[0]?.quantity).toBe(3);
   });
 
   it('refuses a line the cart no longer holds', () => {
-    expect(() => orderableLines(basket([EXIA]), [{ variantId: 'nipper', quantity: 1 }])).toThrow(CartChangedError);
+    expect(() => orderableLines(basket([EXIA]), [{ cartLineId: 'line-nipper', quantity: 1 }])).toThrow(CartChangedError);
   });
 
   it('refuses more than the cart holds', () => {
-    expect(() => orderableLines(basket([EXIA]), [{ variantId: 'exia', quantity: 2 }])).toThrow(CartChangedError);
+    expect(() => orderableLines(basket([EXIA]), [{ cartLineId: 'line-exia', quantity: 2 }])).toThrow(CartChangedError);
+  });
+
+  it('tells two lines of the same variant apart, which a bundle creates', () => {
+    const loose = basketLine({ variantId: 'nipper', unitPriceIdr: 385_000 });
+    const bundled = {
+      ...basketLine({ variantId: 'nipper' }),
+      cartLineId: 'line-bundled-nipper',
+      // Its allocated share of the bundle, which is what it must be charged at.
+      unitPriceIdr: 280_000,
+      bundle: { id: 'bundle-1', name: 'First build starter', slug: 'first-build-starter' },
+    };
+
+    const lines = orderableLines(basket([loose, bundled]), [
+      { cartLineId: 'line-bundled-nipper', quantity: 1 },
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.lineTotalIdr).toBe(280_000);
+    expect(lines[0]?.basketLine.bundle?.name).toBe('First build starter');
   });
 
   it('refuses a line that was unpublished, naming it', () => {
-    const attempt = () => orderableLines(basket([{ ...NIPPER, isSellable: false }]), [{ variantId: 'nipper', quantity: 1 }]);
+    const attempt = () => orderableLines(basket([{ ...NIPPER, isSellable: false }]), [{ cartLineId: 'line-nipper', quantity: 1 }]);
 
     expect(attempt).toThrow(ConflictError);
     expect(attempt).toThrow('GodHand Ultimate Nipper is no longer available.');

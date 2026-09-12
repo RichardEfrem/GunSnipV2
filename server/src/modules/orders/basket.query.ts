@@ -1,4 +1,5 @@
 import { actorScope, type Actor } from '@gunsnip/shared';
+import { allocatedPricesByRowId } from '../cart/cart-grouping.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { VOUCHER_TERMS_SELECT, toVoucherTerms } from '../vouchers/voucher-terms.query.js';
 import type { Basket, BasketLine, BasketVoucher } from './entities/basket.entity.js';
@@ -17,6 +18,18 @@ const LINE_SELECT = {
   id: true,
   quantity: true,
   priceAtAddIdr: true,
+  // A bundle component is charged its allocated share of the bundle price, not its catalogue
+  // price (FR-CAT-11) — so the order's subtotal is the sum of the bundle prices the customer was
+  // shown, and every rule that reads a line total agrees with the screen.
+  bundle: {
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      priceIdr: true,
+      items: { select: { variantId: true, quantity: true } },
+    },
+  },
   variant: {
     select: {
       id: true,
@@ -69,9 +82,13 @@ export async function queryBasket(
 
   if (cart === null) return null;
 
+  // Allocated once over the whole basket: a component's share cannot be known without its
+  // siblings, and the same pure allocator the cart view uses decides it.
+  const allocated = allocatedPricesByRowId(cart.items);
+
   return {
     cartId: cart.id,
-    lines: cart.items.map(toBasketLine),
+    lines: cart.items.map((row) => toBasketLine(row, allocated.get(row.id))),
     voucher: cart.voucherId === null ? null : await queryVoucher(db, cart.voucherId, actor, options.lockVoucher),
   };
 }
@@ -100,7 +117,7 @@ async function queryVoucher(
   return { terms, sessionRedemptions };
 }
 
-function toBasketLine(row: LineRow): BasketLine {
+function toBasketLine(row: LineRow, allocatedUnitPriceIdr: number | undefined): BasketLine {
   const { variant } = row;
   const { product } = variant;
   const image = product.images[0];
@@ -110,10 +127,17 @@ function toBasketLine(row: LineRow): BasketLine {
     requestedQuantity: row.quantity,
     priceAtAddIdr: row.priceAtAddIdr,
 
+    bundle:
+      row.bundle === null
+        ? null
+        : { id: row.bundle.id, name: row.bundle.name, slug: row.bundle.slug },
+
     variantId: variant.id,
     sku: variant.sku,
     variantName: variant.name,
-    unitPriceIdr: variant.priceIdr,
+    // The allocated share when the line is part of a bundle, the variant's own price otherwise.
+    // Either way it comes from the database (CLAUDE.md non-negotiable #2).
+    unitPriceIdr: allocatedUnitPriceIdr ?? variant.priceIdr,
     stockOnHand: variant.stockOnHand,
     stockReserved: variant.stockReserved,
     isSellable: !variant.isArchived && product.status === 'PUBLISHED',

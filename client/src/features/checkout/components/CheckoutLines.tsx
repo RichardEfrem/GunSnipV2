@@ -12,7 +12,7 @@ export function CheckoutLines({ lines }: { lines: readonly CheckoutLine[] }) {
   return (
     <ul className="flex flex-col divide-y divide-armor-150">
       {lines.map((line) => (
-        <li key={line.variantId} className="flex gap-3 py-3 first:pt-0">
+        <li key={line.cartLineId} className="flex gap-3 py-3 first:pt-0">
           <Thumbnail src={line.image?.url ?? null} blurDataUrl={line.image?.blurDataUrl} size={48} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">

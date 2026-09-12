@@ -1,4 +1,4 @@
-import type { Actor, OrderStatus, PaymentStatus } from '@gunsnip/shared';
+import { actorScope, type Actor, type OrderStatus, type PaymentStatus } from '@gunsnip/shared';
 import { Prisma } from '../../generated/prisma/client.js';
 import type { StockLevel } from '../inventory/stock-reservation.js';
 import type { AuditActor } from './audit-actor.js';
@@ -46,6 +46,29 @@ export class OrderUnit {
   }): Promise<boolean> {
     const { count } = await this.tx.idempotencyKey.createMany({ data: [claim], skipDuplicates: true });
     return count === 1;
+  }
+
+  /**
+   * The variants behind the cart lines the customer confirmed — read *before* the locks, so the
+   * locks can be taken in id order (PRD §8.3).
+   *
+   * The order body names cart lines, not variants (FR-CAT-11 put the same variant in the cart
+   * twice), so which rows to lock has to be looked up rather than taken from the request. Reading
+   * it from the database rather than trusting a client-supplied variant id is also what stops a
+   * request naming one line and locking a different variant.
+   *
+   * Scoped to the actor's own cart: an id from somewhere else simply resolves to nothing, and the
+   * line then fails to match in `orderableLines` like any other stale line.
+   */
+  async variantIdsForLines(actor: Actor, cartLineIds: readonly string[]): Promise<string[]> {
+    if (cartLineIds.length === 0) return [];
+
+    const rows = await this.tx.cartItem.findMany({
+      where: { id: { in: [...cartLineIds] }, cart: actorScope(actor) },
+      select: { variantId: true },
+    });
+
+    return rows.map((row) => row.variantId);
   }
 
   /**

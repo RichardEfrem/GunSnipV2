@@ -35,6 +35,11 @@ export interface OrderView {
 
 export interface OrderItemView {
   id: string;
+  /**
+   * Set when this line was bought as part of a bundle (FR-CAT-11). Lines sharing a name are one
+   * item to the customer, and their line totals add up to what the bundle was sold for.
+   */
+  bundleName: string | null;
   productName: string;
   variantName: string | null;
   sku: string;

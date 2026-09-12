@@ -74,7 +74,7 @@ export function CheckoutScreen({ quote, draft, provinces, cities, districts }: C
       },
       shippingTier: selected.tier,
       paymentMethod: values.paymentMethod,
-      items: quote.lines.map((line) => ({ variantId: line.variantId, quantity: line.quantity })),
+      items: quote.lines.map((line) => ({ cartLineId: line.cartLineId, quantity: line.quantity })),
       expectedTotalIdr: quote.totals.totalIdr,
     });
   }

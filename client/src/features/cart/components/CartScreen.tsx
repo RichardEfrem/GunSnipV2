@@ -1,8 +1,10 @@
 'use client';
 
 import { CircleAlert } from 'lucide-react';
+import { groupCartLines, isBundlePurchasable, isBundleSelected } from '../group-lines';
 import { useCartActions } from '../hooks/use-cart-actions';
 import type { Cart } from '../schema';
+import { CartBundleItem } from './CartBundleItem';
 import { CartLineItem } from './CartLineItem';
 import { CartSelectionBar } from './CartSelectionBar';
 import { CartSummary } from './CartSummary';
@@ -20,8 +22,14 @@ export function CartScreen({ cart }: { cart: Cart }) {
   const actions = useCartActions(cart.lines);
   const { lines, error } = actions;
 
-  const purchasable = lines.filter((line) => line.isPurchasable);
-  const selectedCount = purchasable.filter((line) => line.isSelected).length;
+  // Counted as the customer sees them: a bundle is one item, not one per component (FR-CAT-11).
+  const entries = groupCartLines(lines);
+  const purchasable = entries.filter((entry) =>
+    entry.kind === 'line' ? entry.line.isPurchasable : isBundlePurchasable(entry.lines),
+  );
+  const selectedCount = purchasable.filter((entry) =>
+    entry.kind === 'line' ? entry.line.isSelected : isBundleSelected(entry.lines),
+  ).length;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
@@ -41,16 +49,32 @@ export function CartScreen({ cart }: { cart: Cart }) {
         ) : null}
 
         <ul className="divide-y divide-armor-150">
-          {lines.map((line) => (
-            <CartLineItem
-              key={line.id}
-              line={line}
-              error={error !== null && error.lineId === line.id ? error.message : null}
-              onQuantityChange={(quantity) => actions.setQuantity(line, quantity)}
-              onSelectedChange={(isSelected) => actions.setSelected(line, isSelected)}
-              onRemove={() => actions.remove(line)}
-            />
-          ))}
+          {entries.map((entry) =>
+            entry.kind === 'line' ? (
+              <CartLineItem
+                key={entry.line.id}
+                line={entry.line}
+                error={error !== null && error.lineId === entry.line.id ? error.message : null}
+                onQuantityChange={(quantity) => actions.setQuantity(entry.line, quantity)}
+                onSelectedChange={(isSelected) => actions.setSelected(entry.line, isSelected)}
+                onRemove={() => actions.remove(entry.line)}
+              />
+            ) : (
+              // Every control acts through the group's first line: the server applies a change to
+              // any component to the whole bundle, so one line is enough to address it by.
+              <CartBundleItem
+                key={entry.bundle.id}
+                bundle={entry.bundle}
+                lines={entry.lines}
+                error={
+                  error !== null && entry.lines.some((line) => line.id === error.lineId) ? error.message : null
+                }
+                onQuantityChange={(quantity) => actions.setQuantity(entry.lines[0]!, quantity)}
+                onSelectedChange={(isSelected) => actions.setSelected(entry.lines[0]!, isSelected)}
+                onRemove={() => actions.remove(entry.lines[0]!)}
+              />
+            ),
+          )}
         </ul>
       </section>
 

@@ -75,10 +75,15 @@ export class OrderAddressDto {
   readonly notes?: string;
 }
 
-/** A line as the checkout summary showed it. A variant and a count — never a price. */
+/**
+ * A line as the checkout summary showed it. A **cart line** and a count — never a price.
+ *
+ * Keyed on the cart line rather than the variant: once bundles exist (FR-CAT-11) a variant can be
+ * in the cart twice, at two different prices, so a variant id no longer names one line.
+ */
 export class OrderItemDto {
   @IsUUID()
-  readonly variantId!: string;
+  readonly cartLineId!: string;
 
   @IsInt()
   @Min(1)
@@ -123,7 +128,7 @@ export class PlaceOrderDto {
 
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_LINES_PER_ORDER)
-  @ArrayUnique((item: OrderItemDto) => item.variantId, { message: 'items must name each variant once' })
+  @ArrayUnique((item: OrderItemDto) => item.cartLineId, { message: 'items must name each cart line once' })
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   readonly items!: OrderItemDto[];

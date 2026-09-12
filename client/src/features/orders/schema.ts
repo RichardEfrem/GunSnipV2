@@ -9,6 +9,12 @@ import { ORDER_STATUSES, PAYMENT_METHODS, PAYMENT_STATUSES, SHIPPING_TIERS } fro
  */
 export const orderItemSchema = z.object({
   id: z.string(),
+  /**
+   * Set when the line was bought as part of a bundle (FR-CAT-11). Lines sharing a name are the
+   * one item the customer chose; the name rather than an id, because a retired bundle takes its
+   * id with it and the grouping has to outlive that.
+   */
+  bundleName: z.string().nullable(),
   productName: z.string(),
   variantName: z.string().nullable(),
   sku: z.string(),

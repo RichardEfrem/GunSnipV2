@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { RateLimitModule } from '../../common/rate-limit/rate-limit.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { PaymentProviderModule } from '../payments/provider/payment-provider.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
 import { CheckoutController } from './checkout.controller.js';
@@ -25,13 +26,17 @@ import { OrdersService } from './orders.service.js';
  * settling one runs in *this* module's transaction rather than a second one that would then have
  * to be coordinated with it.
  *
+ * `NotificationsModule` is imported for the transactional mails (FR-NOTIF-01). It does not
+ * import this one back — it reads what a mail needs through its own narrow repository rather
+ * than through `OrderRepository`, which is what keeps the two out of a cycle.
+ *
  * `OrderFulfilmentService` (FR-ADM-07, FR-ADM-08) is exported for the admin controllers. It is
  * here rather than there because advancing an order is an order rule: it goes through the same
  * `transitionOrder` the buyer's cancel button and the expiry sweep use, so an operator shipping
  * an order and a customer cancelling one settle stock and vouchers by the identical code.
  */
 @Module({
-  imports: [ShippingModule, RateLimitModule, PaymentProviderModule],
+  imports: [ShippingModule, RateLimitModule, PaymentProviderModule, NotificationsModule],
   controllers: [CheckoutController, OrdersController],
   providers: [
     CheckoutService,

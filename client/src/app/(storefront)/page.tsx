@@ -1,6 +1,10 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { buttonStyles } from '@/components/ui/button-styles';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { fetchBundles } from '@/features/bundles/api';
+import { BundleCard } from '@/features/bundles/components/BundleCard';
+import type { Bundle } from '@/features/bundles/schema';
 import { fetchHome } from '@/features/catalog/api';
 import { GradeShortcuts } from '@/features/catalog/components/GradeShortcuts';
 import { ProductRail } from '@/features/catalog/components/ProductRail';
@@ -52,6 +56,11 @@ export default async function HomePage() {
       <ProductRail title="Most popular" products={content.mostPopular} href="/kits?sort=top_rated" />
       <ProductRail title="Tools and supplies" products={content.tools} href="/tools" />
 
+      {/* Streamed: a curated set is worth showing, but it must not hold up the rails above it. */}
+      <Suspense fallback={null}>
+        <BundleRail />
+      </Suspense>
+
       {content.banners.length === 0 ? null : (
         <section className="mx-auto w-full max-w-content px-4 md:px-6">
           <h2 className="mb-3 text-xl">Offers</h2>
@@ -73,6 +82,46 @@ export default async function HomePage() {
         </section>
       )}
     </div>
+  );
+}
+
+/** Curated bundles (FR-CAT-11), below the catalogue rails. */
+async function BundleRail() {
+  // Only the await is guarded. JSX built inside a `try` would not have its *render* errors caught
+  // by it — React renders the element later, by which point this function has returned — so the
+  // fetch and the markup are kept apart, as the product page does.
+  let bundles: Bundle[] = [];
+
+  try {
+    bundles = await fetchBundles();
+  } catch {
+    // A rail is an extra. Losing one is not worth an error message on a page that works.
+    return null;
+  }
+
+  // Renders nothing when there are none, rather than an empty heading — a bundle is an operator's
+  // choice, and a shop with none should not advertise the absence.
+  if (bundles.length === 0) return null;
+
+  return (
+    <section aria-labelledby="bundles-rail" className="mx-auto w-full max-w-content px-4 md:px-6">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 id="bundles-rail" className="text-xl">
+          Bundles
+        </h2>
+        <Link href="/bundles" className="reticle rounded-sm text-sm font-medium text-core-blue">
+          See all
+        </Link>
+      </div>
+
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {bundles.slice(0, 3).map((bundle) => (
+          <li key={bundle.id}>
+            <BundleCard bundle={bundle} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

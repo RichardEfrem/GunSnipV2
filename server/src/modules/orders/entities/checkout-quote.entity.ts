@@ -23,7 +23,15 @@ export interface CheckoutQuote {
 }
 
 export interface CheckoutLine {
+  /**
+   * The cart line this quotes. What `POST /orders` sends back to confirm it (FR-CO-08) — a
+   * variant id no longer identifies one line, because a bundle can put the same variant in the
+   * cart twice at a different price (FR-CAT-11).
+   */
+  cartLineId: string;
   variantId: string;
+  /** Set when this line is part of a bundle, so the summary can group and name it. */
+  bundle: { id: string; name: string; slug: string } | null;
   sku: string;
   productName: string;
   productSlug: string;

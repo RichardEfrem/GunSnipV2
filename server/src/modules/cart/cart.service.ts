@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MAX_QUANTITY_PER_LINE, type Actor } from '@gunsnip/shared';
 import { ConflictError } from '../../common/errors/conflict.error.js';
 import { NotFoundError } from '../../common/errors/not-found.error.js';
+import { bundleAvailability, BundleService } from '../catalog/bundle.service.js';
 import type { ShippingEstimate } from '../shipping/entities/shipping-estimate.entity.js';
 import { ShippingService } from '../shipping/shipping.service.js';
 import type { VoucherBasket } from '../vouchers/entities/voucher-evaluation.entity.js';
@@ -9,7 +10,7 @@ import { VoucherRejectedError } from '../vouchers/errors/voucher-rejected.error.
 import { VoucherService } from '../vouchers/voucher.service.js';
 import {
   emptyCart,
-  toCartLine,
+  toCartLines,
   toCartVoucher,
   toCartView,
   toVoucherBasket,
@@ -19,6 +20,7 @@ import {
   CartRepository,
   type AddLine,
   type CartRow,
+  type ExistingLine,
   type OwnedLine,
   type PricedLine,
   type SellableVariant,
@@ -57,6 +59,7 @@ export class CartService {
     private readonly carts: CartRepository,
     private readonly shipping: ShippingService,
     private readonly vouchers: VoucherService,
+    private readonly bundles: BundleService,
   ) {}
 
   async view(actor: Actor): Promise<CartView> {
@@ -78,9 +81,55 @@ export class CartService {
     this.assertAllSellable(merged, variants);
 
     const cartId = await this.carts.ensure(actor);
-    const existing = await this.carts.quantitiesByVariant(cartId);
+    const existing = await this.carts.standaloneLinesByVariant(cartId);
 
     await this.carts.addLines(cartId, this.price(merged, variants, existing));
+
+    return this.view(actor);
+  }
+
+  /**
+   * Adds a curated bundle as one item (FR-CAT-11).
+   *
+   * The bundle lands as one cart row per component, all tagged with the bundle — because stock
+   * is held per variant and nothing else — and the view puts them back together. What makes it
+   * "one item" to the customer is that everything downstream acts on the group: the quantity,
+   * the selection, the removal and the price.
+   *
+   * Availability is the scarcest component's: a bundle whose nipper has run out cannot be sold
+   * at all, however many kits are on the shelf.
+   */
+  async addBundle(actor: Actor, slug: string, quantity = 1): Promise<CartView> {
+    const { row } = await this.bundles.componentsOf(slug);
+    const available = bundleAvailability(row);
+
+    if (available <= 0) {
+      throw new ConflictError(`${row.name} is not available right now.`, { slug });
+    }
+
+    const cartId = await this.carts.ensure(actor);
+    const existing = await this.carts.bundleLinesByVariant(cartId, row.id);
+    const held = this.bundlesHeld(row, existing);
+
+    // Cumulative and clamped, exactly as an ordinary line is: asking for three when two are left
+    // is a ceiling, not a mistake worth an error page.
+    const bundles = Math.min(held + quantity, MAX_QUANTITY_PER_LINE, available);
+
+    await this.carts.addBundleLines(
+      cartId,
+      row.id,
+      row.items.map((item) => {
+        const line = existing.get(item.variant.id);
+
+        return {
+          lineId: line?.id,
+          variantId: item.variant.id,
+          quantity: item.quantity * bundles,
+          // From the database, on the server, at this instant. Never from the request.
+          priceAtAddIdr: item.variant.priceIdr,
+        };
+      }),
+    );
 
     return this.view(actor);
   }
@@ -94,6 +143,9 @@ export class CartService {
    */
   async updateItem(actor: Actor, lineId: string, update: CartLineUpdate): Promise<CartView> {
     const line = await this.requireLine(actor, lineId);
+
+    // A bundle is one line to the customer, so a change to any component changes the group.
+    if (line.bundleId !== null) return this.updateBundle(actor, line.bundleId, line.cartId, update);
 
     if (update.quantity !== undefined) {
       this.assertCanHold(line.productName, line.availableQuantity, update.quantity, {
@@ -120,8 +172,67 @@ export class CartService {
   }
 
   async removeItem(actor: Actor, lineId: string): Promise<CartView> {
-    await this.carts.deleteLine(await this.requireLine(actor, lineId));
+    const line = await this.requireLine(actor, lineId);
+
+    // Removing one component of a bundle removes the bundle. Leaving the rest behind would turn
+    // a curated set into loose items still priced as though they were a set.
+    if (line.bundleId !== null) await this.carts.deleteBundleGroup(line.cartId, line.bundleId);
+    else await this.carts.deleteLine(line);
+
     return this.view(actor);
+  }
+
+  /** A quantity or selection change applied to a whole bundle group (FR-CAT-11). */
+  private async updateBundle(
+    actor: Actor,
+    bundleId: string,
+    cartId: string,
+    update: CartLineUpdate,
+  ): Promise<CartView> {
+    if (update.isSelected !== undefined) {
+      await this.carts.setBundleSelected(cartId, bundleId, update.isSelected);
+    }
+
+    if (update.quantity !== undefined) {
+      const { row } = await this.bundles.componentsOfId(bundleId);
+      const available = bundleAvailability(row);
+
+      if (update.quantity > available) {
+        throw new ConflictError(
+          available === 0
+            ? `${row.name} is not available right now.`
+            : `Only ${available} of ${row.name} left.`,
+          { bundleId, requested: update.quantity, availableQuantity: available },
+        );
+      }
+
+      const existing = await this.carts.bundleLinesByVariant(cartId, bundleId);
+
+      await this.carts.setBundleQuantities(
+        cartId,
+        row.items.flatMap((item) => {
+          const line = existing.get(item.variant.id);
+          return line === undefined ? [] : [{ id: line.id, quantity: item.quantity * update.quantity! }];
+        }),
+      );
+    }
+
+    return this.view(actor);
+  }
+
+  /** How many whole bundles the cart already holds of this group. */
+  private bundlesHeld(
+    row: { items: readonly { quantity: number; variant: { id: string } }[] },
+    existing: ReadonlyMap<string, ExistingLine>,
+  ): number {
+    if (existing.size === 0) return 0;
+
+    const counts = row.items.map((item) => {
+      const line = existing.get(item.variant.id);
+      return line === undefined ? 0 : Math.floor(line.quantity / Math.max(1, item.quantity));
+    });
+
+    return Math.min(...counts);
   }
 
   /**
@@ -135,7 +246,7 @@ export class CartService {
     const row = await this.carts.find(actor);
     if (row === null) return emptyCart();
 
-    const doomed = countedLines(row.items.map(toCartLine)).map((line) => line.id);
+    const doomed = countedLines(toCartLines(row.items)).map((line) => line.id);
     if (doomed.length > 0) await this.carts.deleteLines(row.id, doomed);
 
     return this.view(actor);
@@ -191,7 +302,7 @@ export class CartService {
   }
 
   private async priceLines(row: CartRow): Promise<PricedLines> {
-    const lines = row.items.map(toCartLine);
+    const lines = toCartLines(row.items);
     const shippingEstimate = await this.shipping.estimate();
     // Nothing selected, nothing to ship.
     const shippingIdr = countedLines(lines).length === 0 ? 0 : (shippingEstimate?.priceIdr ?? 0);
@@ -312,7 +423,7 @@ export class CartService {
   private price(
     wanted: ReadonlyMap<string, number>,
     variants: ReadonlyMap<string, SellableVariant>,
-    existing: ReadonlyMap<string, number>,
+    existing: ReadonlyMap<string, ExistingLine>,
   ): PricedLine[] {
     const lines: PricedLine[] = [];
 
@@ -320,9 +431,11 @@ export class CartService {
       const variant = variants.get(variantId);
       if (variant === undefined) continue;
 
-      const total = (existing.get(variantId) ?? 0) + quantity;
+      const line = existing.get(variantId);
+      const total = (line?.quantity ?? 0) + quantity;
 
       lines.push({
+        lineId: line?.id,
         variantId,
         quantity: Math.min(total, MAX_QUANTITY_PER_LINE, variant.availableQuantity),
         // From the database, on the server, at this instant. Never from the request.

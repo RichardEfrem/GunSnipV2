@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { PaymentEventType, PaymentStatus } from '@gunsnip/shared';
 import { NotFoundError } from '../../common/errors/not-found.error.js';
 import { ValidationError } from '../../common/errors/validation.error.js';
+import { OrderMailService } from '../notifications/order-mail.service.js';
 import { ADMIN_AUDIT, SYSTEM_AUDIT, type AuditActor } from '../orders/audit-actor.js';
 import { transitionOrder } from '../orders/order-transition.js';
 import { OrderRepository, type PaymentSummary } from '../orders/order.repository.js';
@@ -38,6 +39,7 @@ export class PaymentsService {
 
   constructor(
     private readonly orders: OrderRepository,
+    private readonly mail: OrderMailService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -121,33 +123,40 @@ export class PaymentsService {
    * must not be an error — so it is logged and otherwise ignored.
    */
   private async apply(payment: PaymentSummary, event: PaymentEvent, by: AuditActor): Promise<PaymentStatus> {
-    return this.orders.transaction(async (unit) => {
+    // The transaction returns what the order ended up as alongside the payment status, so the
+    // mail can be sent *after* the commit: one sent from inside would go out for a transaction
+    // that then rolled back, and one that failed inside would roll back a settled payment.
+    const { status, orderStatus } = await this.orders.transaction(async (unit) => {
       // Re-read under the lock: the status fetched a moment ago may already be stale.
       const locked = await unit.lockPayment(payment.paymentId);
       if (locked === null) throw new NotFoundError('That payment could not be found.');
 
       await unit.recordPaymentEvent(locked.paymentId, event);
-      if (event.status === locked.status) return locked.status;
+      if (event.status === locked.status) return { status: locked.status, orderStatus: null };
 
       const to = assertPaymentTransition(locked.status, event.status);
       await unit.applyPaymentStatus(locked.paymentId, to, event.occurredAt);
 
       const outcome = orderOutcomeOf(to);
-      if (outcome !== null) {
-        await transitionOrder(unit, locked.orderId, {
-          to: outcome.orderStatus,
-          by,
-          note: outcome.note,
-          cancelReason: outcome.cancelReason,
-          // A payment outcome never dispatches goods, so its stock effect is only ever "give
-          // the reservation back" or "leave it alone" — never "consume".
-          stock: outcome.isAbandoned ? 'release' : 'hold',
-          paidAt: to === 'PAID' ? event.occurredAt : undefined,
-        });
-      }
+      if (outcome === null) return { status: to, orderStatus: null };
 
-      return to;
+      const orderStatus = await transitionOrder(unit, locked.orderId, {
+        to: outcome.orderStatus,
+        by,
+        note: outcome.note,
+        cancelReason: outcome.cancelReason,
+        // A payment outcome never dispatches goods, so its stock effect is only ever "give
+        // the reservation back" or "leave it alone" — never "consume".
+        stock: outcome.isAbandoned ? 'release' : 'hold',
+        paidAt: to === 'PAID' ? event.occurredAt : undefined,
+      });
+
+      return { status: to, orderStatus };
     });
+
+    if (orderStatus !== null) await this.mail.notify(payment.orderId, orderStatus);
+
+    return status;
   }
 
   private async require(paymentId: string): Promise<PaymentSummary> {

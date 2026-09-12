@@ -4,6 +4,7 @@ import { ConflictError } from '../../common/errors/conflict.error.js';
 import { NotFoundError } from '../../common/errors/not-found.error.js';
 import { ValidationError } from '../../common/errors/validation.error.js';
 import { AppConfig } from '../../config/app-config.js';
+import { OrderMailService } from '../notifications/order-mail.service.js';
 import { chargeCreatedEvent } from '../payments/payment-event.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/provider/payment-provider.js';
 import { reserveStock, type StockLevel } from '../inventory/stock-reservation.js';
@@ -20,7 +21,7 @@ import { orderableLines } from './order-lines.js';
 import { toOrderView } from './order-mapper.js';
 import { randomOrderNumber } from './order-number.js';
 import { priceOrder } from './order-pricing.js';
-import { OrderRepository } from './order.repository.js';
+import { OrderRepository, type OrderRecord } from './order.repository.js';
 import { requestHash } from './request-hash.js';
 
 /** Which endpoint an `Idempotency-Key` belongs to, so one key cannot collide across operations. */
@@ -55,6 +56,7 @@ export class OrderPlacementService {
     private readonly orders: OrderRepository,
     private readonly shipping: ShippingService,
     private readonly config: AppConfig,
+    private readonly mail: OrderMailService,
     @Inject(PAYMENT_PROVIDER) private readonly payments: PaymentProvider,
   ) {}
 
@@ -75,9 +77,12 @@ export class OrderPlacementService {
       });
       if (!isClaimed) return null;
 
-      const stock = await unit.lockVariants(request.items.map((item) => item.variantId));
+      // Which variants the confirmed lines sit on is read first, because the request names cart
+      // lines and the locks have to be taken by variant id, in id order (PRD §8.3).
+      const variantIds = await unit.variantIdsForLines(actor, request.items.map((item) => item.cartLineId));
+      const stock = await unit.lockVariants(variantIds);
       const basket = await unit.readBasket(actor);
-      if (basket === null) throw new CartChangedError(request.items[0]?.variantId ?? '');
+      if (basket === null) throw new CartChangedError({ cartLineId: request.items[0]?.cartLineId ?? '' });
 
       const lines = orderableLines(basket, request.items);
       const reserved = lines.map((line) => reserveStock(lockedLevel(stock, line.basketLine.variantId), line.quantity));
@@ -129,7 +134,14 @@ export class OrderPlacementService {
       return draft.orderNumber;
     });
 
-    return this.view(placed ?? (await this.replayed(actor, idempotencyKey, hash)));
+    const record = await this.require(placed ?? (await this.replayed(actor, idempotencyKey, hash)));
+
+    // After the commit, and only for the request that actually placed the order. A retry
+    // (FR-CO-07) is answered with the same order and must not send a second "we have your
+    // order" — an idempotent endpoint that mails twice is not idempotent to the customer.
+    if (placed !== null) await this.mail.notify(record.id, 'PENDING_PAYMENT');
+
+    return toOrderView(record);
   }
 
   /**
@@ -181,18 +193,18 @@ export class OrderPlacementService {
     return record.orderNumber;
   }
 
-  private async view(orderNumber: string): Promise<OrderView> {
+  private async require(orderNumber: string): Promise<OrderRecord> {
     const record = await this.orders.findByNumber(orderNumber);
     if (record === null) throw new NotFoundError('That order could not be found.', { orderNumber });
 
-    return toOrderView(record);
+    return record;
   }
 }
 
 /** The row locked for a line. Always present — the basket line proves the variant exists. */
 function lockedLevel(stock: ReadonlyMap<string, StockLevel>, variantId: string): StockLevel {
   const level = stock.get(variantId);
-  if (level === undefined) throw new CartChangedError(variantId);
+  if (level === undefined) throw new CartChangedError({ variantId });
 
   return level;
 }

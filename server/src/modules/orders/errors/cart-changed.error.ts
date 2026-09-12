@@ -8,9 +8,10 @@ import { ConflictError } from '../../../common/errors/conflict.error.js';
 export class CartChangedError extends ConflictError {
   override readonly code: string = 'CART_CHANGED';
 
-  constructor(variantId: string) {
+  constructor(line: { cartLineId?: string; variantId?: string }) {
     super('Your cart changed since checkout opened. Check the summary and place the order again.', {
-      variantId,
+      ...(line.cartLineId === undefined ? {} : { cartLineId: line.cartLineId }),
+      ...(line.variantId === undefined ? {} : { variantId: line.variantId }),
     });
   }
 }

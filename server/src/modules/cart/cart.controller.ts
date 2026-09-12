@@ -13,6 +13,7 @@ import {
 import type { Actor } from '@gunsnip/shared';
 import { CurrentActor } from '../../common/decorators/current-actor.decorator.js';
 import { CartService } from './cart.service.js';
+import { AddCartBundleDto } from './dto/add-cart-bundle.dto.js';
 import { AddCartItemsDto } from './dto/add-cart-items.dto.js';
 import { ApplyVoucherDto } from './dto/apply-voucher.dto.js';
 import { SetCartSelectionDto } from './dto/set-cart-selection.dto.js';
@@ -35,6 +36,12 @@ export class CartController {
   @Post('items')
   async addItems(@CurrentActor() actor: Actor, @Body() dto: AddCartItemsDto): Promise<CartView> {
     return this.cart.addItems(actor, dto.items);
+  }
+
+  /** Adds a curated bundle as one item (FR-CAT-11). */
+  @Post('bundles')
+  async addBundle(@CurrentActor() actor: Actor, @Body() dto: AddCartBundleDto): Promise<CartView> {
+    return this.cart.addBundle(actor, dto.slug, dto.quantity);
   }
 
   @Patch('items')

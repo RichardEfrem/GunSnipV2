@@ -1,19 +1,35 @@
 import { Module } from '@nestjs/common';
+import { ProductReviewsController } from './product-reviews.controller.js';
+import { ReviewInviteRepository } from './review-invite.repository.js';
+import { ReviewInviteService } from './review-invite.service.js';
+import { ReviewListingService } from './review-listing.service.js';
 import { ReviewModerationService } from './review-moderation.service.js';
+import { ReviewSubmissionService } from './review-submission.service.js';
 import { ReviewRepository } from './review.repository.js';
+import { ReviewsController } from './reviews.controller.js';
 
 /**
  * Reviews (FR-REV-01 … FR-REV-06).
  *
- * Phase 9 builds the moderation half (FR-ADM-11), because it is the gate everything else waits
- * behind: the customer-facing submission, invites and histogram of Phase 10 all produce or read
- * reviews that only matter once something decides which of them are visible.
+ * Phase 9 built the moderation half, because it is the gate everything else waits behind: only
+ * an approved review reaches a product page or the rating counter on a product card. Phase 10
+ * adds the three pieces that produce and read those rows — the tokenised invite that authorises
+ * a review (FR-REV-02), the submission itself, and the public list with its histogram and
+ * filters (FR-REV-05).
  *
- * No controller of its own yet — the moderation routes live with the other admin routes, and the
- * storefront's read and write arrive in Phase 10.
+ * `ReviewInviteService` is exported because delivery is what mints an invite, and the mail that
+ * carries the links is the notification module's.
  */
 @Module({
-  providers: [ReviewModerationService, ReviewRepository],
-  exports: [ReviewModerationService],
+  controllers: [ProductReviewsController, ReviewsController],
+  providers: [
+    ReviewInviteRepository,
+    ReviewInviteService,
+    ReviewListingService,
+    ReviewModerationService,
+    ReviewSubmissionService,
+    ReviewRepository,
+  ],
+  exports: [ReviewInviteService, ReviewModerationService],
 })
 export class ReviewsModule {}

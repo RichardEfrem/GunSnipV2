@@ -14,6 +14,9 @@ import { ProductTabs, type ProductTab } from '@/features/catalog/components/Prod
 import { PurchasePanel } from '@/features/catalog/components/PurchasePanel';
 import type { BuildRequirement, ProductDetail, RelatedProducts } from '@/features/catalog/schema';
 import { fetchCart } from '@/features/cart/api';
+import { fetchProductReviews } from '@/features/reviews/api';
+import { ReviewSection } from '@/features/reviews/components/ReviewSection';
+import type { ProductReviewsPage } from '@/features/reviews/schema';
 import { ApiError } from '@/lib/api-error';
 import { formatCount, formatRating } from '@/lib/formatters';
 
@@ -107,7 +110,10 @@ export default async function ProductPage({ params }: PageProps<'/products/[slug
         </div>
       </div>
 
-      <ProductTabs tabs={buildTabs(product)} />
+      {/* The reviews block is fetched here rather than inside `buildTabs`, so the first page is
+          in the server-rendered HTML: reviews that only appear after hydration are reviews a
+          crawler never sees, and the page's AggregateRating would then describe nothing. */}
+      <ProductTabs tabs={buildTabs(product, await reviewsFor(slug))} />
 
       <Suspense fallback={null}>
         <RelatedRails slug={slug} />
@@ -236,7 +242,16 @@ function RequirementsSkeleton() {
  * silently do not exist — a tab row that changes shape between products is harder to read than
  * one with an honest empty state (DESIGN.md §4.5).
  */
-function buildTabs(product: ProductDetail): ProductTab[] {
+async function reviewsFor(slug: string): Promise<ProductReviewsPage | null> {
+  try {
+    return await fetchProductReviews(slug);
+  } catch {
+    // A failed reviews read must not take the product page down. The tab says so instead.
+    return null;
+  }
+}
+
+function buildTabs(product: ProductDetail, reviews: ProductReviewsPage | null): ProductTab[] {
   return [
     {
       id: 'description',
@@ -256,7 +271,12 @@ function buildTabs(product: ProductDetail): ProductTab[] {
     {
       id: 'reviews',
       label: `Reviews (${formatCount(product.reviewCount)})`,
-      content: <p className="text-frame-300">Reviews arrive with the review system.</p>,
+      content:
+        reviews === null ? (
+          <ErrorState title="Couldn't load the reviews" description="The kit is still available to buy." />
+        ) : (
+          <ReviewSection slug={product.slug} initial={reviews} />
+        ),
     },
     {
       id: 'shipping',

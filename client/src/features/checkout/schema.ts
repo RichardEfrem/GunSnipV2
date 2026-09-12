@@ -31,7 +31,15 @@ export const shippingOptionSchema = z.object({
 export type ShippingOption = z.infer<typeof shippingOptionSchema>;
 
 export const checkoutLineSchema = z.object({
+  /**
+   * The cart line this quotes — what `POST /orders` sends back to confirm it. A variant id no
+   * longer identifies one line: a bundle can put the same variant in the cart twice, at a
+   * different price (FR-CAT-11).
+   */
+  cartLineId: z.string(),
   variantId: z.string(),
+  /** Set when the line is part of a bundle, so the summary can group and name it. */
+  bundle: z.object({ id: z.string(), name: z.string(), slug: z.string() }).nullable(),
   sku: z.string(),
   productName: z.string(),
   productSlug: z.string(),

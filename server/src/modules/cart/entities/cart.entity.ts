@@ -55,6 +55,31 @@ export interface CartLine {
 
   stockState: StockState;
   availableQuantity: number;
+
+  /**
+   * Set when this line is a component of a bundle bought as one item (FR-CAT-11).
+   *
+   * The line stays a line — it has its own variant, its own stock and its own reservation,
+   * because that is the only thing a shelf understands. What the bundle adds is the instruction
+   * to *render* the component rows sharing an id as the single line the customer chose, at the
+   * bundle's price rather than the sum of its parts, and to act on them together: changing the
+   * quantity or removing one component changes or removes the whole bundle.
+   */
+  bundle: CartLineBundle | null;
+}
+
+export interface CartLineBundle {
+  id: string;
+  slug: string;
+  name: string;
+  /** How many of this bundle the cart holds — the number the grouped line's stepper shows. */
+  quantity: number;
+  /** What one bundle costs. */
+  unitPriceIdr: number;
+  /** `unitPriceIdr × quantity` — shown once, on the group, not on each component. */
+  groupTotalIdr: number;
+  /** Against buying the components separately. Zero when there is nothing to boast about. */
+  savingIdr: number;
 }
 
 /** See `CART_NOTICE_KINDS` in `@gunsnip/shared` for what each one means. */

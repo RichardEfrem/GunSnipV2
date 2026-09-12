@@ -24,6 +24,10 @@ export function toOrderView(record: OrderRecord): OrderView {
 
     items: record.items.map((item) => ({
       id: item.id,
+      // The bundle this line was bought as part of (FR-CAT-11). Lines sharing a name render as
+      // the one item the customer chose; the name rather than the id, because the id is cleared
+      // if the bundle is later retired and the grouping has to outlive it.
+      bundleName: item.bundleNameSnapshot,
       productName: item.productNameSnapshot,
       variantName: item.variantNameSnapshot,
       sku: item.skuSnapshot,

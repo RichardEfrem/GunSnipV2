@@ -38,6 +38,7 @@ const ORDER_SELECT = {
   items: {
     select: {
       id: true,
+      bundleNameSnapshot: true,
       productNameSnapshot: true,
       variantNameSnapshot: true,
       skuSnapshot: true,

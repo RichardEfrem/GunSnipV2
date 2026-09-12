@@ -14,6 +14,7 @@ export function basketLine(overrides: Partial<BasketLine> = {}): BasketLine {
     cartLineId: `line-${overrides.variantId ?? 'exia'}`,
     requestedQuantity: 1,
     priceAtAddIdr: overrides.unitPriceIdr ?? 785_000,
+    bundle: null,
     variantId: 'exia',
     sku: 'MG-EXIA',
     variantName: null,

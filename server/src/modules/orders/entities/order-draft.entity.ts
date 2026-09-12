@@ -39,6 +39,10 @@ export interface OrderDraft {
 /** An order line, snapshotted (FR-ORD-05). Nothing here is read back through the variant. */
 export interface OrderItemDraft {
   variantId: string;
+  /** The bundle this line was bought as part of (FR-CAT-11), or null for an ordinary line. */
+  bundleId: string | null;
+  /** Written down beside the id, because the id is cleared if the bundle is ever retired. */
+  bundleNameSnapshot: string | null;
   productNameSnapshot: string;
   variantNameSnapshot: string | null;
   skuSnapshot: string;

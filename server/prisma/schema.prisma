@@ -549,6 +549,16 @@ model CartItem {
   variantId String         @map("variant_id") @db.Uuid
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
+  /// Which bundle this line was added as part of (FR-CAT-11), or null for an ordinary line.
+  ///
+  /// A bundle is **one line to the customer and one row per component here**, because stock is
+  /// held, consumed and released per variant — there is no such thing as "one bundle" on a shelf.
+  /// Tagging the components rather than inventing a line that has no variant is what lets every
+  /// rule downstream — revalidation, reservation, voucher scope, the order — keep working on
+  /// variants unchanged. The cart view groups the tagged rows back into the single line.
+  bundleId String? @map("bundle_id") @db.Uuid
+  bundle   Bundle? @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
   quantity Int
   /// Per-line selection drives the totals; unchecked lines stay in the cart and are excluded
   /// from checkout, which is how people actually use a cart (FR-CART-03).
@@ -562,8 +572,14 @@ model CartItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([cartId, variantId])
+  /// A variant may legitimately be in the cart twice — once on its own and once inside a bundle
+  /// — so the identity of a line is the variant *and* the bundle it belongs to. The "adding the
+  /// same thing twice raises the quantity" rule is kept by two partial unique indexes in the
+  /// migration, which Prisma cannot express: `NULL` bundles compare as distinct in Postgres, so a
+  /// plain unique here would let the same standalone variant be added as two separate rows.
+  @@index([cartId, bundleId])
   @@index([variantId])
+  @@index([bundleId])
   @@map("cart_item")
 }
 
@@ -631,6 +647,18 @@ model OrderItem {
   variantId String?         @map("variant_id") @db.Uuid
   variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
+  /// The bundle this line was bought as part of (FR-CAT-11). A bundle is one line in the cart
+  /// and expands into one order line per component here, because stock is reserved, consumed and
+  /// refunded per variant — there is no such thing as "one bundle" on a shelf. The order view
+  /// groups the components back into the single line the customer chose.
+  ///
+  /// `SetNull` rather than `Restrict`: a retired bundle must not pin an order's history. The
+  /// grouping is therefore done on `bundleNameSnapshot`, which outlives the id — an order whose
+  /// bundle was later deleted still renders as the one line the customer bought.
+  bundleId           String? @map("bundle_id") @db.Uuid
+  bundle             Bundle? @relation(fields: [bundleId], references: [id], onDelete: SetNull)
+  bundleNameSnapshot String? @map("bundle_name_snapshot")
+
   productNameSnapshot String  @map("product_name_snapshot")
   variantNameSnapshot String? @map("variant_name_snapshot")
   skuSnapshot         String  @map("sku_snapshot")
@@ -646,6 +674,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([variantId])
+  @@index([bundleId])
   @@map("order_item")
 }
 
@@ -940,11 +969,12 @@ model NotifyRequest {
   @@map("notify_request")
 }
 
-/// Kit + tools at a set price (FR-CAT-11).
+/// Kit + tools at a set price, purchasable as a single line item (FR-CAT-11).
 ///
-/// Catalogue only for now. Making one *purchasable as a single line item* adds a nullable
-/// bundle_id to cart_item and order_item; that is a migration, and it lands with the rest of
-/// FR-CAT-11 rather than sitting unused and unexercised in the hot path until then.
+/// The price is the bundle's own, not the sum of its parts — that is the whole point of one —
+/// so it is stored here and allocated across the components at checkout rather than derived.
+/// A bundle is one line in the cart and one line on the order screen; underneath, it is one
+/// `order_item` per component, because stock lives on variants and nothing else.
 model Bundle {
   id          String  @id @default(uuid()) @db.Uuid
   name        String
@@ -959,7 +989,9 @@ model Bundle {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  items BundleItem[]
+  items      BundleItem[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   @@map("bundle")
 }

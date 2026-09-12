@@ -45,9 +45,29 @@ export const cartLineSchema = z.object({
 
   stockState: z.enum(STOCK_STATES),
   availableQuantity: z.int(),
+
+  /**
+   * Set when the line is a component of a bundle bought as one item (FR-CAT-11).
+   *
+   * Lines sharing an id render as the single line the customer chose, at `unitPriceIdr` rather
+   * than the sum of their parts, and act together: the stepper and the remove button apply to the
+   * whole group, which is what the server does with them too.
+   */
+  bundle: z
+    .object({
+      id: z.string(),
+      slug: z.string(),
+      name: z.string(),
+      quantity: z.int(),
+      unitPriceIdr: z.int(),
+      groupTotalIdr: z.int(),
+      savingIdr: z.int(),
+    })
+    .nullable(),
 });
 
 export type CartLine = z.infer<typeof cartLineSchema>;
+export type CartLineBundle = NonNullable<CartLine['bundle']>;
 
 /**
  * Why a voucher cannot be used (FR-CART-06). Structured, because two reasons carry a date and

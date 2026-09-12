@@ -21,6 +21,21 @@ const LINE_SELECT = {
   quantity: true,
   isSelected: true,
   priceAtAddIdr: true,
+  // Null for an ordinary line. When set, the view groups this row with its siblings into the
+  // single line the customer chose (FR-CAT-11), priced at the bundle's own price.
+  //
+  // `items` comes along because the group's price has to be *allocated* across its components
+  // (`bundle-allocation.ts`), and that needs each component's per-bundle quantity — the cart row
+  // holds `perBundleQuantity × bundles`, which on its own cannot be separated back into the two.
+  bundle: {
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      priceIdr: true,
+      items: { select: { variantId: true, quantity: true } },
+    },
+  },
   variant: {
     select: {
       id: true,
@@ -80,6 +95,8 @@ export interface SellableVariant {
 export interface OwnedLine {
   id: string;
   cartId: string;
+  /** Set when the line is part of a bundle group — quantity and removal act on the whole group. */
+  bundleId: string | null;
   variantId: string;
   priceIdr: number;
   availableQuantity: number;
@@ -180,38 +197,88 @@ export class CartRepository {
    * database: a nipper that lands while the panel liner fails would leave the customer with a
    * half-filled cart and no way to tell which half.
    *
-   * Each line is an upsert on `(cart_id, variant_id)` — adding a tool already in the cart
-   * raises its quantity rather than creating a second row for the same thing. `quantity` is
-   * pre-clamped by the service, so the value written is already known to be legal.
+   * A line the service matched to one already in the cart is updated by id; the rest are created.
+   * Not an upsert, because the uniqueness that makes a standalone line unique is a *partial*
+   * index — `(cart_id, variant_id) WHERE bundle_id IS NULL` — and a partial index cannot be a
+   * Prisma compound key. The service has already resolved which is which, so nothing is guessed
+   * here. `quantity` arrives pre-clamped, so every value written is already known to be legal.
+   *
+   * `price_at_add_idr` is deliberately not refreshed on an update: it records what the customer
+   * was shown when they first added the line, which is what FR-CART-04 compares against.
    */
   async addLines(cartId: string, lines: readonly PricedLine[]): Promise<void> {
     await this.prisma.$transaction([
       ...lines.map((line) =>
-        this.prisma.cartItem.upsert({
-          where: { cartId_variantId: { cartId, variantId: line.variantId } },
-          create: {
-            cartId,
-            variantId: line.variantId,
-            quantity: line.quantity,
-            priceAtAddIdr: line.priceAtAddIdr,
-          },
-          // `price_at_add_idr` is deliberately not refreshed: it records what the customer was
-          // shown when they first added the line, which is what FR-CART-04 compares against.
-          update: { quantity: line.quantity },
-        }),
+        line.lineId === undefined
+          ? this.prisma.cartItem.create({
+              data: {
+                cartId,
+                variantId: line.variantId,
+                quantity: line.quantity,
+                priceAtAddIdr: line.priceAtAddIdr,
+              },
+            })
+          : this.prisma.cartItem.update({
+              where: { id: line.lineId },
+              data: { quantity: line.quantity },
+            }),
       ),
       this.touch(cartId),
     ]);
   }
 
-  /** Current quantities by variant, so an add can be folded onto what is already there. */
-  async quantitiesByVariant(cartId: string): Promise<Map<string, number>> {
+  /**
+   * Adds a bundle's components as one group (FR-CAT-11), in one transaction.
+   *
+   * Always created, never folded into existing lines: a bundle is a thing the customer chose as
+   * a unit, and merging its nipper into the loose nipper already in the cart would make the
+   * bundle unremovable as a unit and its price unattributable. Adding the same bundle again
+   * raises the quantity of the group it is already in, which the service resolves before calling.
+   */
+  async addBundleLines(cartId: string, bundleId: string, lines: readonly PricedLine[]): Promise<void> {
+    await this.prisma.$transaction([
+      ...lines.map((line) =>
+        line.lineId === undefined
+          ? this.prisma.cartItem.create({
+              data: {
+                cartId,
+                bundleId,
+                variantId: line.variantId,
+                quantity: line.quantity,
+                priceAtAddIdr: line.priceAtAddIdr,
+              },
+            })
+          : this.prisma.cartItem.update({
+              where: { id: line.lineId },
+              data: { quantity: line.quantity },
+            }),
+      ),
+      this.touch(cartId),
+    ]);
+  }
+
+  /**
+   * The cart's **standalone** lines by variant, so an add can be folded onto what is already
+   * there. Bundled lines are excluded deliberately: adding a loose nipper must not silently
+   * raise the quantity of the nipper inside a starter bundle.
+   */
+  async standaloneLinesByVariant(cartId: string): Promise<Map<string, ExistingLine>> {
     const rows = await this.prisma.cartItem.findMany({
-      where: { cartId },
-      select: { variantId: true, quantity: true },
+      where: { cartId, bundleId: null },
+      select: { id: true, variantId: true, quantity: true },
     });
 
-    return new Map(rows.map((row) => [row.variantId, row.quantity]));
+    return new Map(rows.map((row) => [row.variantId, { id: row.id, quantity: row.quantity }]));
+  }
+
+  /** The lines of one bundle group already in this cart, by variant. */
+  async bundleLinesByVariant(cartId: string, bundleId: string): Promise<Map<string, ExistingLine>> {
+    const rows = await this.prisma.cartItem.findMany({
+      where: { cartId, bundleId },
+      select: { id: true, variantId: true, quantity: true },
+    });
+
+    return new Map(rows.map((row) => [row.variantId, { id: row.id, quantity: row.quantity }]));
   }
 
   /** One line, only if it is in a cart this actor owns. */
@@ -221,6 +288,7 @@ export class CartRepository {
       select: {
         id: true,
         cartId: true,
+        bundleId: true,
         variant: {
           select: {
             id: true,
@@ -241,6 +309,7 @@ export class CartRepository {
     return {
       id: row.id,
       cartId: row.cartId,
+      bundleId: row.bundleId,
       variantId: variant.id,
       priceIdr: variant.priceIdr,
       availableQuantity: Math.max(0, variant.stockOnHand - variant.stockReserved),
@@ -253,6 +322,38 @@ export class CartRepository {
     await this.prisma.$transaction([
       this.prisma.cartItem.update({ where: { id: line.id }, data: change }),
       this.touch(line.cartId),
+    ]);
+  }
+
+  /**
+   * Rewrites a bundle group's line quantities together (FR-CAT-11).
+   *
+   * The group is one line to the customer, so its quantity changes as one: every component row
+   * moves to `perBundleQuantity × bundles` in a single transaction, or none of them does. A
+   * partial write would leave a group that no longer represents a whole number of bundles.
+   */
+  async setBundleQuantities(cartId: string, lines: readonly { id: string; quantity: number }[]): Promise<void> {
+    await this.prisma.$transaction([
+      ...lines.map((line) =>
+        this.prisma.cartItem.update({ where: { id: line.id }, data: { quantity: line.quantity } }),
+      ),
+      this.touch(cartId),
+    ]);
+  }
+
+  /** Selecting or deselecting a bundle acts on all of its components at once (FR-CART-03). */
+  async setBundleSelected(cartId: string, bundleId: string, isSelected: boolean): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.cartItem.updateMany({ where: { cartId, bundleId }, data: { isSelected } }),
+      this.touch(cartId),
+    ]);
+  }
+
+  /** Removing a bundle removes every component it put in the cart, and only those. */
+  async deleteBundleGroup(cartId: string, bundleId: string): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.cartItem.deleteMany({ where: { cartId, bundleId } }),
+      this.touch(cartId),
     ]);
   }
 
@@ -295,7 +396,15 @@ export class CartRepository {
 
 /** A line the service has already validated, clamped and priced. */
 export interface PricedLine {
+  /** The row to raise, when this variant is already in the cart. Undefined creates a new line. */
+  lineId?: string;
   variantId: string;
   quantity: number;
   priceAtAddIdr: number;
+}
+
+/** A line already in the cart, as the service needs it to fold an add onto it. */
+export interface ExistingLine {
+  id: string;
+  quantity: number;
 }
