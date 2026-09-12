@@ -66,8 +66,9 @@ export function PurchasePanel({ product }: PurchasePanelProps) {
 
   async function buyNow() {
     if (selected === undefined) return;
-    await add([{ variantId: selected.id, quantity }]);
-    router.push('/cart');
+    // Only on success — navigating after a failed add would land on a cart without the item,
+    // with the reason left behind on the page the customer just left.
+    if (await add([{ variantId: selected.id, quantity }])) router.push('/cart');
   }
 
   return (

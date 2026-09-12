@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { Button } from '@/components/ui/Button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -74,8 +74,8 @@ export default async function SearchPage({ searchParams }: PageProps<'/search'>)
           title="What are you building?"
           description="Search by kit, mobile suit or part number — “Barbatos”, “RX-78-2”, “panel liner”."
           action={
-            <Link href="/kits">
-              <Button variant="secondary">Browse all kits</Button>
+            <Link href="/kits" className={buttonStyles('secondary')}>
+              Browse all kits
             </Link>
           }
         />
@@ -110,8 +110,8 @@ async function Results({ state }: { state: ListState }) {
         title="Couldn't run that search"
         description="The catalogue didn't respond. Your cart is safe — try again in a moment."
         action={
-          <Link href={`/search?q=${encodeURIComponent(state.q ?? '')}`}>
-            <Button variant="secondary">Try again</Button>
+          <Link href={`/search?q=${encodeURIComponent(state.q ?? '')}`} className={buttonStyles('secondary')}>
+            Try again
           </Link>
         }
       />
@@ -179,8 +179,8 @@ async function Results({ state }: { state: ListState }) {
                 : 'Try removing a filter — each one narrows the results further.'
             }
             action={
-              <Link href={`/search?q=${encodeURIComponent(first.query)}`}>
-                <Button variant="secondary">Clear all filters</Button>
+              <Link href={`/search?q=${encodeURIComponent(first.query)}`} className={buttonStyles('secondary')}>
+                Clear all filters
               </Link>
             }
           />

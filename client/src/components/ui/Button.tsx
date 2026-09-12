@@ -3,21 +3,11 @@
 import { LoaderCircle } from 'lucide-react';
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { buttonStyles, type ButtonVariant } from './button-styles';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type { ButtonVariant } from './button-styles';
 
-/**
- * DESIGN.md §4.2. Primary is the only filled variant and there is **one per view** — it is
- * how "the thing to do here" is expressed, so a second one on screen makes both weaker.
- */
-const VARIANTS: Record<ButtonVariant, string> = {
-  // The only chamfered variant. `chamfer-plate` rather than `chamfer` so the focus ring is
-  // not clipped away with the corners — see the utility's note in globals.css.
-  primary: 'chamfer-plate [--plate:var(--red-fill)] hover:[--plate:var(--red-fill-hover)] text-white',
-  secondary: 'border border-core-blue text-core-blue hover:bg-core-blue-tint',
-  ghost: 'text-ink hover:bg-ink-tint',
-  danger: 'border border-danger text-danger hover:bg-danger-tint',
-};
+/** DESIGN.md §4.2. The variants themselves, and the one-primary-per-view rule, live in `button-styles.ts`. */
 
 interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'> {
   variant?: ButtonVariant;
@@ -55,17 +45,15 @@ export function Button({
     <button
       {...props}
       type={type}
-      // 48px on touch, 44px on pointer (DESIGN.md §4.2, §6).
-      className={cn(
-        'reticle relative inline-flex h-12 select-none items-center justify-center gap-2 rounded-sm px-4 md:h-11',
-        'font-display text-base font-semibold',
-        'transition-colors duration-fast ease-out',
-        'disabled:cursor-not-allowed aria-disabled:cursor-not-allowed',
-        // Dimmed because it cannot be used — a loading button is busy, not unavailable, so it
-        // keeps its full weight (DESIGN.md §4.2).
-        disabled && 'opacity-50',
-        VARIANTS[variant],
-        className,
+      className={buttonStyles(
+        variant,
+        cn(
+          'disabled:cursor-not-allowed aria-disabled:cursor-not-allowed',
+          // Dimmed because it cannot be used — a loading button is busy, not unavailable, so it
+          // keeps its full weight (DESIGN.md §4.2).
+          disabled && 'opacity-50',
+          className,
+        ),
       )}
       disabled={isHardDisabled}
       aria-disabled={(isInert && !isHardDisabled) || undefined}

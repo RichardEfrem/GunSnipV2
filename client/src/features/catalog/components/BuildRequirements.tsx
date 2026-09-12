@@ -39,9 +39,14 @@ const NECESSITY_LABELS: Record<Necessity, string> = {
   OPTIONAL: 'Optional',
 };
 
+/**
+ * Weight and tone, not accent colour. Red is money and purchase intent only and blue is
+ * navigation (DESIGN.md §1), and a necessity is neither — so "Required" is the heaviest ink on
+ * the block and the lesser tiers step down in contrast.
+ */
 const NECESSITY_TONES: Record<Necessity, string> = {
-  REQUIRED: 'text-sortie-red',
-  RECOMMENDED: 'text-core-blue',
+  REQUIRED: 'text-ink',
+  RECOMMENDED: 'text-ink',
   OPTIONAL: 'text-frame-300',
 };
 
@@ -78,10 +83,10 @@ export function BuildRequirements({ requirements, inCartVariantIds }: BuildRequi
 
   async function addSelected() {
     const items = [...selectedIds].map((variantId) => ({ variantId, quantity: 1 }));
-    await add(items);
-    // Cleared on success so the block reflects the cart it just changed; the rows themselves
-    // come back as "Already in cart" when the server tree refreshes.
-    setSelectedIds(new Set());
+    // Cleared on success only, so the block reflects the cart it just changed and the rows come
+    // back as "Already in cart" when the server tree refreshes. On failure the ticks stay: the
+    // customer should be able to read the error and press the button again, not re-pick tools.
+    if (await add(items)) setSelectedIds(new Set());
   }
 
   const grouped = NECESSITIES.map((necessity) => ({
@@ -104,7 +109,8 @@ export function BuildRequirements({ requirements, inCartVariantIds }: BuildRequi
           <li key={group.necessity} className="py-2 first:pt-0 last:pb-0">
             <p
               className={cn(
-                'font-display text-xs font-semibold uppercase tracking-wide',
+                // Sentence case: no tracked-out all-caps labels (DESIGN.md §2.2).
+                'font-display text-sm font-semibold',
                 NECESSITY_TONES[group.necessity],
               )}
             >

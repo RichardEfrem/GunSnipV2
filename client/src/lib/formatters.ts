@@ -68,6 +68,25 @@ export function formatDateTime(value: Date | string): string {
   return DATE_TIME.format(new Date(value));
 }
 
+/**
+ * A courier's delivery window: `1–2 days` · `1 day` · `same day`. Numbers, not "fast"
+ * (DESIGN.md §5). The cart's estimate, the checkout options and a placed order all say it this way.
+ */
+export function formatDeliveryDays(minDays: number, maxDays: number): string {
+  if (maxDays === 0) return 'same day';
+  if (minDays === maxDays) return `${minDays} ${minDays === 1 ? 'day' : 'days'}`;
+  return `${minDays}–${maxDays} days`;
+}
+
+/**
+ * When a parcel arrives, counted from payment — which is when the courier is booked. One
+ * sentence for the delivery options, the checkout summary and a placed order, so the promise is
+ * worded the same at every step: `Arrives 1–2 days after payment` · `Arrives the day you pay`.
+ */
+export function formatDeliveryPromise(minDays: number, maxDays: number): string {
+  return maxDays === 0 ? 'Arrives the day you pay' : `Arrives ${formatDeliveryDays(minDays, maxDays)} after payment`;
+}
+
 /** `23:47:12` — the payment expiry countdown (DESIGN.md §3.8). */
 export function formatDuration(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));

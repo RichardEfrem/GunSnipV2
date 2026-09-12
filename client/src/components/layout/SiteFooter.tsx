@@ -20,7 +20,7 @@ const COLUMNS = [
   {
     heading: 'Help',
     links: [
-      { label: 'Track order', href: '/orders/track' },
+      { label: 'Track order', href: '/orders' },
       { label: 'Shipping', href: '/help/shipping' },
       { label: 'Returns', href: '/help/returns' },
       { label: 'Contact', href: '/help/contact' },

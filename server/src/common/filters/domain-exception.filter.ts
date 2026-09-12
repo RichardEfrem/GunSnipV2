@@ -11,6 +11,7 @@ import { ConflictError } from '../errors/conflict.error.js';
 import { DomainError } from '../errors/domain-error.js';
 import { ForbiddenError } from '../errors/forbidden.error.js';
 import { NotFoundError } from '../errors/not-found.error.js';
+import { TooManyRequestsError } from '../errors/too-many-requests.error.js';
 import { UnauthorizedError } from '../errors/unauthorized.error.js';
 import { ValidationError } from '../errors/validation.error.js';
 
@@ -21,6 +22,7 @@ const DOMAIN_ERROR_STATUSES: ReadonlyArray<readonly [new (...args: never[]) => D
   [ConflictError, HttpStatus.CONFLICT],
   [ForbiddenError, HttpStatus.FORBIDDEN],
   [UnauthorizedError, HttpStatus.UNAUTHORIZED],
+  [TooManyRequestsError, HttpStatus.TOO_MANY_REQUESTS],
 ];
 
 interface ErrorBody {

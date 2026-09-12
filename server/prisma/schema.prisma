@@ -589,6 +589,10 @@ model Order {
   shippingRegion   AddressRegion? @relation(fields: [shippingRegionId], references: [id], onDelete: SetNull)
 
   shippingTier ShippingTier @map("shipping_tier")
+  /// The delivery window quoted at checkout (FR-CO-09). Snapshotted like the prices, so a later
+  /// edit to the rate table cannot change a promise already made to this customer.
+  shippingMinDays Int @map("shipping_min_days")
+  shippingMaxDays Int @map("shipping_max_days")
 
   subtotalIdr Int @map("subtotal_idr")
   discountIdr Int @default(0) @map("discount_idr")

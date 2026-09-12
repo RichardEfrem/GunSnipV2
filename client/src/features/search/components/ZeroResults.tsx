@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { ProductRail } from '@/features/catalog/components/ProductRail';
 import type { CategoryNode, ProductSummary } from '@/features/catalog/schema';
 
@@ -48,18 +48,18 @@ export function ZeroResults({ query, didYouMean, categories, popular }: ZeroResu
         )}
 
         <div className="mt-2 flex flex-wrap justify-center gap-3">
-          <Link href="/kits">
-            <Button variant="secondary">Browse all kits</Button>
+          <Link href="/kits" className={buttonStyles('secondary')}>
+            Browse all kits
           </Link>
-          <Link href="/tools">
-            <Button variant="ghost">Browse tools</Button>
+          <Link href="/tools" className={buttonStyles('ghost')}>
+            Browse tools
           </Link>
         </div>
       </div>
 
       {categories.length === 0 ? null : (
         <section className="flex flex-col gap-3 px-4 md:px-6">
-          <h3 className="font-display text-sm font-semibold uppercase tracking-wide">
+          <h3 className="font-display text-base font-semibold">
             Browse a category instead
           </h3>
           <ul className="flex flex-wrap gap-2">

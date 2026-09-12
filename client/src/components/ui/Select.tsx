@@ -1,7 +1,7 @@
 'use client';
 
 import * as RadixSelect from '@radix-ui/react-select';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert } from 'lucide-react';
 import { useId } from 'react';
 import { cn } from '@/lib/cn';
 
@@ -25,6 +25,8 @@ interface SelectProps {
   options: readonly SelectOption[];
   placeholder?: string;
   disabled?: boolean;
+  /** The message below the field, as on `Input`. Its presence puts the field in the error state. */
+  error?: string;
   className?: string;
 }
 
@@ -36,9 +38,12 @@ export function Select({
   options,
   placeholder = 'Select…',
   disabled = false,
+  error,
   className,
 }: SelectProps) {
   const id = useId();
+  const errorId = `${id}-error`;
+  const hasError = error !== undefined;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -49,10 +54,13 @@ export function Select({
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger
           id={id}
+          aria-invalid={hasError || undefined}
+          aria-describedby={hasError ? errorId : undefined}
           className={cn(
             'reticle inline-flex h-11 w-full items-center justify-between gap-2 rounded-sm bg-armor-000 px-3 text-base',
             'border border-field-border transition-colors duration-fast ease-out',
             'data-[state=open]:border-core-blue',
+            hasError && 'border-danger data-[state=open]:border-danger',
             'data-[placeholder]:text-frame-300',
             'disabled:cursor-not-allowed disabled:bg-armor-050 disabled:text-frame-300',
             className,
@@ -94,6 +102,14 @@ export function Select({
           </RadixSelect.Content>
         </RadixSelect.Portal>
       </RadixSelect.Root>
+
+      {hasError ? (
+        // Colour is never the only signal, so the icon rides with the message (DESIGN.md §6).
+        <p id={errorId} className="flex items-center gap-1.5 text-xs text-danger">
+          <CircleAlert className="size-4 shrink-0" aria-hidden />
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

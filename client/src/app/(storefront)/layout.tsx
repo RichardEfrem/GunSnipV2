@@ -3,13 +3,14 @@ import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { fetchCart } from '@/features/cart/api';
+import type { Cart } from '@/features/cart/schema';
 
 /**
  * The storefront shell. Admin gets its own group and its own chrome (PRD §7), which is why
  * the header and tab bar live here rather than in the root layout.
  */
 export default async function StorefrontLayout({ children }: { children: ReactNode }) {
-  const cartCount = await cartBadgeCount();
+  const cart = await cartOrNull();
 
   return (
     // Reserves the fixed mobile tab bar's height so the footer is never underneath it. The bar
@@ -22,7 +23,7 @@ export default async function StorefrontLayout({ children }: { children: ReactNo
         Skip to content
       </a>
 
-      <SiteHeader cartCount={cartCount} />
+      <SiteHeader cart={cart} />
       <main id="main" className="flex-1">
         {children}
       </main>
@@ -33,16 +34,17 @@ export default async function StorefrontLayout({ children }: { children: ReactNo
 }
 
 /**
- * The number beside the cart icon, or zero when the cart cannot be read.
+ * The cart behind the header's badge and mini-cart drawer, or null when it cannot be read.
  *
  * Swallowed on purpose: the header is on every page, and an API blip must not turn the whole
- * storefront into an error boundary over a badge. A missing count reads as an empty cart, which
- * is the least wrong thing it could say.
+ * storefront into an error boundary over a badge. A missing cart reads as an empty one, which
+ * is the least wrong thing it could say — and the cart page, which cannot shrug the same
+ * failure off, reports it properly.
  */
-async function cartBadgeCount(): Promise<number> {
+async function cartOrNull(): Promise<Cart | null> {
   try {
-    return (await fetchCart()).totals.selectedQuantity;
+    return await fetchCart();
   } catch {
-    return 0;
+    return null;
   }
 }

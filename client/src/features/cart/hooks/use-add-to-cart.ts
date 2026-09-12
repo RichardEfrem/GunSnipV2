@@ -2,8 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
-import { ApiError } from '@/lib/api-error';
 import { addCartItems } from '../client-api';
+import { cartErrorMessage } from '../error-message';
 import { flyToCart } from '../cart-arc';
 import type { AddCartItem } from '../schema';
 
@@ -24,7 +24,12 @@ interface UseAddToCart {
   status: AddStatus;
   /** A message fit to show a customer. Null unless `status` is `error`. */
   error: string | null;
-  add: (items: readonly AddCartItem[]) => Promise<void>;
+  /**
+   * Resolves `true` once the items are in the cart. Never rejects — a failure is already on
+   * screen through `error` — so the boolean is how a caller knows whether to carry on: "Buy now"
+   * must not navigate to a cart the item never reached.
+   */
+  add: (items: readonly AddCartItem[]) => Promise<boolean>;
 }
 
 /** How long the inline "Added" confirmation stays up before the button returns to normal. */
@@ -43,7 +48,7 @@ export function useAddToCart(flyFrom?: () => HTMLElement | null): UseAddToCart {
 
   const add = useCallback(
     async (items: readonly AddCartItem[]) => {
-      if (items.length === 0) return;
+      if (items.length === 0) return false;
 
       setStatus('adding');
       setError(null);
@@ -52,15 +57,8 @@ export function useAddToCart(flyFrom?: () => HTMLElement | null): UseAddToCart {
         await addCartItems(items);
       } catch (cause) {
         setStatus('error');
-        // The API's domain errors are already written for a customer ("Only 2 of Mr. Top Coat
-        // left"), so they are shown as-is. Anything else gets a generic line rather than a
-        // stack trace (DESIGN.md §4.5).
-        setError(
-          cause instanceof ApiError
-            ? cause.message
-            : 'That could not be added just now. Please try again.',
-        );
-        return;
+        setError(cartErrorMessage(cause));
+        return false;
       }
 
       // Fired after the write succeeds, so the part never flies for an item that did not land.
@@ -75,6 +73,8 @@ export function useAddToCart(flyFrom?: () => HTMLElement | null): UseAddToCart {
         // in flight owns the status by the time this fires.
         setStatus((current) => (current === 'added' ? 'idle' : current));
       }, CONFIRMATION_MS);
+
+      return true;
     },
     [flyFrom, router],
   );

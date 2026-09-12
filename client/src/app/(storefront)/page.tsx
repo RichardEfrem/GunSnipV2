@@ -1,10 +1,10 @@
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { fetchHome } from '@/features/catalog/api';
+import { GradeShortcuts } from '@/features/catalog/components/GradeShortcuts';
 import { ProductRail } from '@/features/catalog/components/ProductRail';
 import type { HomeContent } from '@/features/catalog/schema';
-import { gradeHref } from '@/lib/navigation';
 
 /**
  * The home page (FR-CAT-01).
@@ -27,8 +27,8 @@ export default async function HomePage() {
           title="Couldn't load the shop"
           description="The catalogue didn't respond. Everything in your cart is still there — try again in a moment."
           action={
-            <Link href="/">
-              <Button variant="secondary">Try again</Button>
+            <Link href="/" className={buttonStyles('secondary')}>
+              Try again
             </Link>
           }
         />
@@ -40,30 +40,7 @@ export default async function HomePage() {
     <div className="flex flex-col gap-10 py-6">
       <Hero />
 
-      <section className="mx-auto w-full max-w-content px-4 md:px-6">
-        <h2 className="sr-only">Browse by grade</h2>
-        <ul className="flex flex-wrap gap-2">
-          {content.gradeShortcuts.map((grade) => (
-            <li key={grade.code}>
-              <Link
-                href={gradeHref(grade.code)}
-                className="reticle chamfer flex min-h-11 items-center gap-2 border border-armor-150 bg-armor-000 px-3 font-display text-sm font-semibold transition-colors duration-fast ease-out hover:border-core-blue"
-              >
-                {grade.code}
-                <span className="font-normal tabular-nums text-frame-300">{grade.productCount}</span>
-              </Link>
-            </li>
-          ))}
-          <li>
-            <Link
-              href="/tools"
-              className="reticle chamfer flex min-h-11 items-center border border-armor-150 bg-armor-000 px-3 font-display text-sm font-semibold transition-colors duration-fast ease-out hover:border-core-blue"
-            >
-              Tools
-            </Link>
-          </li>
-        </ul>
-      </section>
+      <GradeShortcuts grades={content.gradeShortcuts} className="mx-auto w-full max-w-content px-4 md:px-6" />
 
       <ProductRail title="New arrivals" products={content.newArrivals} href="/kits" isPriority />
 
@@ -107,7 +84,7 @@ function Hero() {
   return (
     <section className="mx-auto w-full max-w-content px-4 md:px-6">
       <div className="chamfer flex flex-col items-start gap-3 border border-armor-150 bg-frame-900 px-6 py-12 md:px-10 md:py-16">
-        <p className="font-display text-sm font-semibold uppercase tracking-wide text-frame-muted">
+        <p className="font-display text-sm font-semibold text-frame-muted">
           Gunpla, shipped across Indonesia
         </p>
         <h1 className="max-w-measure text-3xl text-white md:text-4xl">
@@ -117,8 +94,8 @@ function Hero() {
           Every kit page lists what you actually need to build it — so the nipper arrives in the
           same box.
         </p>
-        <Link href="/kits" className="mt-2">
-          <Button>Browse kits</Button>
+        <Link href="/kits" className={buttonStyles('primary', 'mt-2')}>
+          Browse kits
         </Link>
       </div>
     </section>
@@ -135,8 +112,8 @@ function FirstBuild() {
           Three kits, one tool, no glue. About two hours each, and nothing you buy here is wasted
           on the next one.
         </p>
-        <Link href="/kits?difficulty=BEGINNER&inStock=true" className="mt-2">
-          <Button variant="secondary">Start here</Button>
+        <Link href="/kits?difficulty=BEGINNER&inStock=true" className={buttonStyles('secondary', 'mt-2')}>
+          Start here
         </Link>
       </div>
     </section>

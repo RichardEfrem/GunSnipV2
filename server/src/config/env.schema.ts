@@ -29,6 +29,22 @@ export const envSchema = z.object({
 
   /** Gates POST /dev/payments/:id/simulate and friends (FR-PAY-05). */
   ENABLE_DEV_ENDPOINTS: z.stringbool().default(false),
+
+  /**
+   * Order creation is rate limited per caller (PRD §12 Security). Ten in five minutes is far
+   * more than a person places and far fewer than a script wants, and each one reserves stock —
+   * which is what the limit is really protecting.
+   */
+  ORDER_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+  ORDER_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(300),
+
+  /**
+   * How many reverse proxies sit in front of the API. Decides what Express reports as `req.ip`,
+   * and `req.ip` is what the order limiter buckets on. Zero — no proxy — is the safe default:
+   * trusting an `X-Forwarded-For` that nobody put there lets a caller mint a fresh bucket per
+   * request and the limit stops existing.
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
 });
 
 export type Env = z.infer<typeof envSchema>;

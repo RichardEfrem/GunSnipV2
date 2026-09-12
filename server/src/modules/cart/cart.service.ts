@@ -2,34 +2,66 @@ import { Injectable } from '@nestjs/common';
 import { MAX_QUANTITY_PER_LINE, type Actor } from '@gunsnip/shared';
 import { ConflictError } from '../../common/errors/conflict.error.js';
 import { NotFoundError } from '../../common/errors/not-found.error.js';
-import { emptyCart, toCartView } from './cart-mapper.js';
+import type { ShippingEstimate } from '../shipping/entities/shipping-estimate.entity.js';
+import { ShippingService } from '../shipping/shipping.service.js';
+import type { VoucherBasket } from '../vouchers/entities/voucher-evaluation.entity.js';
+import { VoucherRejectedError } from '../vouchers/errors/voucher-rejected.error.js';
+import { VoucherService } from '../vouchers/voucher.service.js';
+import {
+  emptyCart,
+  toCartLine,
+  toCartVoucher,
+  toCartView,
+  toVoucherBasket,
+} from './cart-mapper.js';
+import { countedLines } from './cart-pricing.js';
 import {
   CartRepository,
   type AddLine,
+  type CartRow,
+  type OwnedLine,
   type PricedLine,
   type SellableVariant,
 } from './cart.repository.js';
-import type { CartView } from './entities/cart.entity.js';
+import type { CartLine, CartVoucher, CartView } from './entities/cart.entity.js';
+
+/** A change to one line, as the storefront asks for it. */
+export interface CartLineUpdate {
+  quantity?: number;
+  isSelected?: boolean;
+}
+
+/** A cart's lines priced, with the shipping and voucher basket that follow from them. */
+interface PricedLines {
+  lines: CartLine[];
+  shippingEstimate: ShippingEstimate | null;
+  shippingIdr: number;
+  basket: VoucherBasket;
+}
 
 /**
- * The cart (FR-CART-01 … FR-CART-03, FR-PDP-07, FR-PDP-08).
+ * The cart (FR-CART-01 … FR-CART-06, FR-PDP-07, FR-PDP-08).
  *
  * Takes an `Actor`, never a user id (CLAUDE.md non-negotiable #6). Phase 0 only ever sees the
  * guest arm, and the cart it finds by `session_id` is the same row Phase 1 will find by
  * `user_id` after adoption — which is why nothing here branches on which arm it got.
  *
- * **No price a client sends is ever read.** The request names a variant and a quantity; every
- * rupiah in the response comes back out of the database (CLAUDE.md non-negotiable #2).
+ * **No price a client sends is ever read.** A request names variants, quantities, a selection,
+ * a voucher code; every rupiah in the response comes back out of the database, recomputed on
+ * every call (CLAUDE.md non-negotiable #2). Every mutation returns the whole cart, so the
+ * storefront never has to reconcile a partial answer with what it already shows.
  */
 @Injectable()
 export class CartService {
-  constructor(private readonly carts: CartRepository) {}
+  constructor(
+    private readonly carts: CartRepository,
+    private readonly shipping: ShippingService,
+    private readonly vouchers: VoucherService,
+  ) {}
 
   async view(actor: Actor): Promise<CartView> {
-    const row = await this.carts.find(actor);
-
     // Reading a cart never creates one. An empty cart is a normal state, not a missing thing.
-    return row === null ? emptyCart() : toCartView(row);
+    return this.build(actor, await this.carts.find(actor));
   }
 
   /**
@@ -50,12 +82,148 @@ export class CartService {
 
     await this.carts.addLines(cartId, this.price(merged, variants, existing));
 
+    return this.view(actor);
+  }
+
+  /**
+   * Changes one line's quantity, selection, or both (FR-CART-02, FR-CART-03).
+   *
+   * Choosing a quantity is choosing it at today's price, so a quantity change also records the
+   * current price as the one the customer has now seen — which is what retires a "Price changed"
+   * notice (FR-CART-04). Ticking a checkbox does not: selection says nothing about the price.
+   */
+  async updateItem(actor: Actor, lineId: string, update: CartLineUpdate): Promise<CartView> {
+    const line = await this.requireLine(actor, lineId);
+
+    if (update.quantity !== undefined) {
+      this.assertCanHold(line.productName, line.availableQuantity, update.quantity, {
+        isSellable: line.isSellable,
+        variantId: line.variantId,
+      });
+    }
+
+    await this.carts.updateLine(line, {
+      isSelected: update.isSelected,
+      quantity: update.quantity,
+      priceAtAddIdr: update.quantity === undefined ? undefined : line.priceIdr,
+    });
+
+    return this.view(actor);
+  }
+
+  /** "Select all" and its inverse (DESIGN.md §3.6). A cart that does not exist has nothing to select. */
+  async setAllSelected(actor: Actor, isSelected: boolean): Promise<CartView> {
+    const cartId = await this.carts.findId(actor);
+    if (cartId !== null) await this.carts.setAllSelected(cartId, isSelected);
+
+    return this.view(actor);
+  }
+
+  async removeItem(actor: Actor, lineId: string): Promise<CartView> {
+    await this.carts.deleteLine(await this.requireLine(actor, lineId));
+    return this.view(actor);
+  }
+
+  /**
+   * "Delete" in the selection bar (DESIGN.md §3.6): removes the lines that are ticked.
+   *
+   * Ticked as the customer sees it — selected *and* purchasable. An out-of-stock line renders
+   * with its checkbox removed, so a stale `is_selected` flag on it is not something the customer
+   * chose to delete, and deleting it would be deleting a shortlist entry they cannot see ticked.
+   */
+  async removeSelected(actor: Actor): Promise<CartView> {
     const row = await this.carts.find(actor);
+    if (row === null) return emptyCart();
 
-    // The cart was created or updated a statement ago; its absence would mean a write vanished.
-    if (row === null) throw new ConflictError('The cart could not be read back after the add.');
+    const doomed = countedLines(row.items.map(toCartLine)).map((line) => line.id);
+    if (doomed.length > 0) await this.carts.deleteLines(row.id, doomed);
 
-    return toCartView(row);
+    return this.view(actor);
+  }
+
+  /**
+   * Applies a voucher, or says precisely why it cannot be applied (FR-CART-06).
+   *
+   * A rejected code is not attached. That is different from a voucher that was valid when
+   * applied and stops qualifying later — that one stays, marked, so reselecting a line can bring
+   * it back (see `CartVoucher`). Applying a second code replaces the first: one per order
+   * (FR-PROMO-05).
+   */
+  async applyVoucher(actor: Actor, code: string): Promise<CartView> {
+    const terms = await this.vouchers.findByCode(code);
+    if (terms === null) throw new VoucherRejectedError(code, { reason: 'NOT_FOUND' });
+
+    const row = await this.carts.find(actor);
+    const basket: VoucherBasket =
+      row === null ? { lines: [], shippingIdr: 0 } : (await this.priceLines(row)).basket;
+
+    const evaluation = await this.vouchers.evaluate(terms, actor, basket);
+    if (!evaluation.isValid) throw new VoucherRejectedError(terms.code, evaluation.rejection);
+
+    // Unreachable in practice — an absent cart is an empty basket, which the rules reject — but
+    // the type system cannot know that, and a guard is cheaper than an assertion.
+    if (row === null) throw new VoucherRejectedError(terms.code, { reason: 'NOTHING_SELECTED' });
+
+    await this.carts.setVoucher(row.id, terms.id);
+    return this.view(actor);
+  }
+
+  async removeVoucher(actor: Actor): Promise<CartView> {
+    const cartId = await this.carts.findId(actor);
+    if (cartId !== null) await this.carts.setVoucher(cartId, null);
+
+    return this.view(actor);
+  }
+
+  /** Prices a cart row from scratch: lines, shipping estimate, voucher, totals. */
+  private async build(actor: Actor, row: CartRow | null): Promise<CartView> {
+    if (row === null) return emptyCart();
+
+    const { lines, shippingEstimate, shippingIdr, basket } = await this.priceLines(row);
+
+    return toCartView({
+      id: row.id,
+      lines,
+      shippingEstimate,
+      shippingIdr,
+      voucher: await this.attachedVoucher(actor, row.voucherId, basket),
+    });
+  }
+
+  private async priceLines(row: CartRow): Promise<PricedLines> {
+    const lines = row.items.map(toCartLine);
+    const shippingEstimate = await this.shipping.estimate();
+    // Nothing selected, nothing to ship.
+    const shippingIdr = countedLines(lines).length === 0 ? 0 : (shippingEstimate?.priceIdr ?? 0);
+
+    return { lines, shippingEstimate, shippingIdr, basket: toVoucherBasket(row.items, lines, shippingIdr) };
+  }
+
+  /**
+   * The voucher on the cart, re-checked against the cart as it is now. A voucher deleted by an
+   * operator detaches itself through the foreign key, so a missing one is simply no voucher.
+   */
+  private async attachedVoucher(
+    actor: Actor,
+    voucherId: string | null,
+    basket: VoucherBasket,
+  ): Promise<CartVoucher | null> {
+    if (voucherId === null) return null;
+
+    const terms = await this.vouchers.findById(voucherId);
+    if (terms === null) return null;
+
+    return toCartVoucher(terms, await this.vouchers.evaluate(terms, actor, basket));
+  }
+
+  private async requireLine(actor: Actor, lineId: string): Promise<OwnedLine> {
+    const line = await this.carts.findOwnedLine(actor, lineId);
+
+    // Not found whether the line is gone or belongs to someone else — the second must be
+    // indistinguishable from the first, or the endpoint confirms which ids exist.
+    if (line === null) throw new NotFoundError('That item is no longer in your cart.', { lineId });
+
+    return line;
   }
 
   /**
@@ -96,19 +264,40 @@ export class CartService {
       const variant = variants.get(variantId);
       if (variant === undefined) continue;
 
-      if (variant.availableQuantity <= 0) {
-        throw new ConflictError(`${variant.productName} is out of stock.`, {
-          variantId,
-          availableQuantity: 0,
-        });
-      }
+      this.assertCanHold(variant.productName, variant.availableQuantity, quantity, {
+        isSellable: true,
+        variantId,
+      });
+    }
+  }
 
-      if (quantity > variant.availableQuantity) {
-        throw new ConflictError(
-          `Only ${variant.availableQuantity} of ${variant.productName} left.`,
-          { variantId, requested: quantity, availableQuantity: variant.availableQuantity },
-        );
-      }
+  /**
+   * Whether a line may hold `quantity` of something. One rule for adding and for editing, so the
+   * product page and the cart page cannot disagree about what "too many" means.
+   */
+  private assertCanHold(
+    productName: string,
+    availableQuantity: number,
+    quantity: number,
+    context: { isSellable: boolean; variantId: string },
+  ): void {
+    if (!context.isSellable) {
+      throw new ConflictError(`${productName} is no longer available.`, { variantId: context.variantId });
+    }
+
+    if (availableQuantity <= 0) {
+      throw new ConflictError(`${productName} is out of stock.`, {
+        variantId: context.variantId,
+        availableQuantity: 0,
+      });
+    }
+
+    if (quantity > availableQuantity) {
+      throw new ConflictError(`Only ${availableQuantity} of ${productName} left.`, {
+        variantId: context.variantId,
+        requested: quantity,
+        availableQuantity,
+      });
     }
   }
 

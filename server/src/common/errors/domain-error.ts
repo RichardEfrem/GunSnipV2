@@ -2,8 +2,9 @@
  * Base for every error the business layer throws.
  *
  * Deliberately carries no HTTP status: services must not know about status codes (CLAUDE.md).
- * The five category subclasses in this folder are what the exception filter maps, so a new
- * domain error extends the category that fits and the filter never needs editing.
+ * The category subclasses in this folder are what the exception filter maps, so a new domain
+ * error extends the category that fits and the filter never needs editing. Adding a category is
+ * the rarer change, and the one that does edit the filter's table.
  */
 export abstract class DomainError extends Error {
   /** Stable, machine-readable identifier the client can branch on. SCREAMING_SNAKE_CASE. */

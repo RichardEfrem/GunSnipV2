@@ -125,8 +125,10 @@ function ProductHeader({ product }: { product: ProductDetail }) {
   return (
     <header className="flex flex-col gap-2">
       {runner === '' ? null : (
-        <p className="font-mono text-xs uppercase tracking-wide text-frame-300">
-          {runner}
+        // Grade and scale are machine identifiers, so mono; the series is a name, so it is not
+        // (DESIGN.md §2.2 — mono is only for identifiers).
+        <p className="text-xs text-frame-300">
+          <span className="font-mono">{runner}</span>
           {product.series === null ? null : ` · ${product.series.name}`}
         </p>
       )}

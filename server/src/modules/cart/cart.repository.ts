@@ -9,6 +9,10 @@ import type { Prisma } from '../../generated/prisma/client.js';
  * The cart is found by `ActorScope` — `user_id` when there is one, `session_id` otherwise
  * (PRD §11.1). No method here takes a `userId`, so Phase 1's guest-cart adoption is a change to
  * the guard that resolves the actor and nothing else.
+ *
+ * Every line-level method takes the actor too, or a line already found through one. A line id
+ * alone proves nothing: it is a UUID in a URL, and one session must never be able to edit
+ * another's cart by guessing or replaying it.
  */
 
 /** Everything a cart line renders, priced from the variant rather than from the line. */
@@ -29,8 +33,12 @@ const LINE_SELECT = {
       isArchived: true,
       product: {
         select: {
+          id: true,
           slug: true,
           name: true,
+          status: true,
+          // Voucher scope matches on the product's category and its parent (FR-PROMO-02).
+          category: { select: { id: true, parentId: true } },
           images: {
             where: { isPrimary: true },
             select: { url: true, alt: true, blurDataUrl: true },
@@ -44,7 +52,11 @@ const LINE_SELECT = {
 
 const CART_SELECT = {
   id: true,
-  items: { select: LINE_SELECT, orderBy: { createdAt: 'asc' } },
+  voucherId: true,
+  // `id` breaks the tie: every line from one "Add selected" shares a `created_at`, and without a
+  // second key Postgres may return them in a different order on each read — lines that swap
+  // places under the customer's cursor after every refresh.
+  items: { select: LINE_SELECT, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
 } satisfies Prisma.CartSelect;
 
 export type CartRow = Prisma.CartGetPayload<{ select: typeof CART_SELECT }>;
@@ -56,12 +68,31 @@ export interface AddLine {
   quantity: number;
 }
 
-/** A variant as the service needs it to decide whether a line may be added at all. */
+/** A variant as the service needs it to decide whether a quantity of it may be held. */
 export interface SellableVariant {
   id: string;
   priceIdr: number;
   availableQuantity: number;
   productName: string;
+}
+
+/** A line the actor owns, with just enough of its variant to validate a change to it. */
+export interface OwnedLine {
+  id: string;
+  cartId: string;
+  variantId: string;
+  priceIdr: number;
+  availableQuantity: number;
+  /** False for an archived variant or an unpublished product. */
+  isSellable: boolean;
+  productName: string;
+}
+
+/** A change to one line. Absent fields are left as they are. */
+export interface LineChange {
+  quantity?: number;
+  isSelected?: boolean;
+  priceAtAddIdr?: number;
 }
 
 @Injectable()
@@ -78,6 +109,17 @@ export class CartRepository {
     });
   }
 
+  /** The actor's cart id without its lines, or null when there is no cart. */
+  async findId(actor: Actor): Promise<string | null> {
+    const cart = await this.prisma.cart.findFirst({
+      where: actorScope(actor),
+      select: { id: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return cart?.id ?? null;
+  }
+
   /**
    * The actor's cart id, creating the row when this is their first add.
    *
@@ -85,13 +127,8 @@ export class CartRepository {
    * `GET /cart` should not leave a row behind, and only an add has earned one.
    */
   async ensure(actor: Actor): Promise<string> {
-    const existing = await this.prisma.cart.findFirst({
-      where: actorScope(actor),
-      select: { id: true },
-      orderBy: { updatedAt: 'desc' },
-    });
-
-    if (existing !== null) return existing.id;
+    const existing = await this.findId(actor);
+    if (existing !== null) return existing;
 
     const scope = actorScope(actor);
 
@@ -163,8 +200,7 @@ export class CartRepository {
           update: { quantity: line.quantity },
         }),
       ),
-      // Touch the cart so `updatedAt` orders it ahead of any stale sibling row.
-      this.prisma.cart.update({ where: { id: cartId }, data: { updatedAt: new Date() } }),
+      this.touch(cartId),
     ]);
   }
 
@@ -176,6 +212,84 @@ export class CartRepository {
     });
 
     return new Map(rows.map((row) => [row.variantId, row.quantity]));
+  }
+
+  /** One line, only if it is in a cart this actor owns. */
+  async findOwnedLine(actor: Actor, lineId: string): Promise<OwnedLine | null> {
+    const row = await this.prisma.cartItem.findFirst({
+      where: { id: lineId, cart: actorScope(actor) },
+      select: {
+        id: true,
+        cartId: true,
+        variant: {
+          select: {
+            id: true,
+            priceIdr: true,
+            stockOnHand: true,
+            stockReserved: true,
+            isArchived: true,
+            product: { select: { name: true, status: true } },
+          },
+        },
+      },
+    });
+
+    if (row === null) return null;
+
+    const { variant } = row;
+
+    return {
+      id: row.id,
+      cartId: row.cartId,
+      variantId: variant.id,
+      priceIdr: variant.priceIdr,
+      availableQuantity: Math.max(0, variant.stockOnHand - variant.stockReserved),
+      isSellable: !variant.isArchived && variant.product.status === 'PUBLISHED',
+      productName: variant.product.name,
+    };
+  }
+
+  async updateLine(line: OwnedLine, change: LineChange): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.cartItem.update({ where: { id: line.id }, data: change }),
+      this.touch(line.cartId),
+    ]);
+  }
+
+  /** "Select all" and its inverse (DESIGN.md §3.6) — one statement, not one per line. */
+  async setAllSelected(cartId: string, isSelected: boolean): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.cartItem.updateMany({ where: { cartId }, data: { isSelected } }),
+      this.touch(cartId),
+    ]);
+  }
+
+  async deleteLine(line: OwnedLine): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.cartItem.delete({ where: { id: line.id } }),
+      this.touch(line.cartId),
+    ]);
+  }
+
+  /** Deletes the named lines, scoped to the cart so an id from elsewhere is simply not matched. */
+  async deleteLines(cartId: string, lineIds: readonly string[]): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.cartItem.deleteMany({ where: { cartId, id: { in: [...lineIds] } } }),
+      this.touch(cartId),
+    ]);
+  }
+
+  /** Attaches a voucher, replacing any other — one per order (FR-PROMO-05). Null detaches. */
+  async setVoucher(cartId: string, voucherId: string | null): Promise<void> {
+    await this.prisma.cart.update({ where: { id: cartId }, data: { voucherId } });
+  }
+
+  /**
+   * Bumps `updatedAt` so this cart orders ahead of any stale sibling row. Returned as a query
+   * rather than run, so every caller can put it in the same transaction as its line write.
+   */
+  private touch(cartId: string) {
+    return this.prisma.cart.update({ where: { id: cartId }, data: { updatedAt: new Date() } });
   }
 }
 

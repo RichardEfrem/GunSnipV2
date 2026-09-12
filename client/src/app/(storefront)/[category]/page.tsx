@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense, type ReactNode } from 'react';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
-import { Button } from '@/components/ui/Button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -126,8 +126,8 @@ async function Listing({
         title="Couldn't load these products"
         description="The catalogue didn't respond. Your cart is safe — try again in a moment."
         action={
-          <Link href={`/${slug}`}>
-            <Button variant="secondary">Try again</Button>
+          <Link href={`/${slug}`} className={buttonStyles('secondary')}>
+            Try again
           </Link>
         }
       />
@@ -174,8 +174,8 @@ async function Listing({
                 : 'Try removing a filter — each one narrows the list further.'
             }
             action={
-              <Link href={`/${slug}`}>
-                <Button variant="secondary">Clear all filters</Button>
+              <Link href={`/${slug}`} className={buttonStyles('secondary')}>
+                Clear all filters
               </Link>
             }
           />

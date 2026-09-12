@@ -64,6 +64,10 @@ npm run test              # unit
 npm run test:e2e          # integration, needs the database
 ```
 
+The integration suite never touches the development database. It reads
+[server/.env.test](server/.env.test), rebuilds `gunsnip_test` from the migrations and the seed
+before every run, and refuses to start if that URL names a database not ending in `_test`.
+
 ## Database
 
 Schema and migrations live in [server/prisma/](server/prisma/); Prisma 7 keeps the connection

@@ -1,7 +1,8 @@
 import { Heart } from 'lucide-react';
 import Link from 'next/link';
+import { MiniCart } from '@/features/cart/components/MiniCart';
+import type { Cart } from '@/features/cart/schema';
 import { PRIMARY_NAV } from '@/lib/navigation';
-import { CartButton } from './CartButton';
 import { HeaderShell } from './HeaderShell';
 import { HeaderSearch } from './HeaderSearch';
 import { NavDropdown } from './NavDropdown';
@@ -15,15 +16,15 @@ import { NavDropdown } from './NavDropdown';
  * Row 2 is desktop-only — on mobile its job belongs to the tab bar (DESIGN.md §3.3), and
  * duplicating it would spend a third of a small screen on chrome.
  *
- * A Server Component. Only the three pieces that genuinely need the browser — scroll position,
- * the rotating placeholder, the dropdown panels — cross into client code.
+ * A Server Component. Only the pieces that genuinely need the browser — scroll position, the
+ * rotating placeholder, the dropdown panels, the mini-cart drawer — cross into client code.
  */
 interface SiteHeaderProps {
-  /** Units across the cart's selected lines, read on the server by the storefront layout. */
-  cartCount?: number;
+  /** Read on the server by the storefront layout. Null when it could not be read. */
+  cart: Cart | null;
 }
 
-export function SiteHeader({ cartCount = 0 }: SiteHeaderProps) {
+export function SiteHeader({ cart }: SiteHeaderProps) {
   return (
     <HeaderShell>
       <div className="mx-auto flex h-16 max-w-content items-center gap-3 px-4 transition-[height] duration-base ease-out group-data-[collapsed=true]:h-14 md:gap-4 md:px-6">
@@ -44,7 +45,7 @@ export function SiteHeader({ cartCount = 0 }: SiteHeaderProps) {
           <span className="sr-only">Stash</span>
         </Link>
 
-        <CartButton count={cartCount} />
+        <MiniCart cart={cart} />
       </div>
 
       {/* Collapses to zero height past 200px of scroll rather than unmounting, so the
@@ -70,7 +71,7 @@ export function SiteHeader({ cartCount = 0 }: SiteHeaderProps) {
           )}
 
           <Link
-            href="/orders/track"
+            href="/orders"
             className="reticle ml-auto flex h-10 items-center rounded-sm px-2 text-sm text-frame-muted transition-colors duration-fast ease-out hover:text-white"
           >
             Track order

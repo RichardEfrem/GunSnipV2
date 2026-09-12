@@ -63,4 +63,16 @@ export class AppConfig {
   get areDevEndpointsEnabled(): boolean {
     return this.env.ENABLE_DEV_ENDPOINTS;
   }
+
+  get orderRateLimit(): number {
+    return this.env.ORDER_RATE_LIMIT;
+  }
+
+  get orderRateWindowMs(): number {
+    return this.env.ORDER_RATE_WINDOW_SECONDS * 1000;
+  }
+
+  get trustProxyHops(): number {
+    return this.env.TRUST_PROXY_HOPS;
+  }
 }
