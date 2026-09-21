@@ -3,6 +3,7 @@ import { NotFoundError } from '../../common/errors/not-found.error.js';
 import { ValidationError } from '../../common/errors/validation.error.js';
 import type { CreateBannerDto, UpdateBannerDto } from './dto/write-banner.dto.js';
 import type { ReorderDto } from './dto/reorder.dto.js';
+import { MediaStorage, type StoredImage, type UploadedFile } from '../media/media-storage.js';
 import { BannerRepository, type AdminBanner } from './banner.repository.js';
 
 /**
@@ -12,10 +13,26 @@ import { BannerRepository, type AdminBanner } from './banner.repository.js';
  * a banner with neither is simply on while `isActive` is true — but an end before a start is a
  * banner that will never show, and an operator who has just scheduled a campaign should be told
  * that now rather than wondering next week why the home page never changed.
+ *
+ * The image is uploaded on its own first and the banner then names the URL it was given, because
+ * a banner's other fields are JSON with dates, booleans and integers that multipart would flatten
+ * into strings. A failed save after a successful upload leaves an unreferenced file — invisible
+ * and reclaimable, the same trade product images make. A file the banner stops pointing at, by
+ * replacement or deletion, is removed.
  */
 @Injectable()
 export class BannerAdminService {
-  constructor(private readonly banners: BannerRepository) {}
+  constructor(
+    private readonly banners: BannerRepository,
+    private readonly media: MediaStorage,
+  ) {}
+
+  async uploadImage(file: UploadedFile | undefined): Promise<Pick<StoredImage, 'url'>> {
+    if (file === undefined) throw new ValidationError('No image file was attached.', {});
+
+    const { url } = await this.media.store(file, 'banners');
+    return { url };
+  }
 
   async list(): Promise<AdminBanner[]> {
     return this.banners.listAll();
@@ -45,7 +62,7 @@ export class BannerAdminService {
       dto.endsAt === undefined ? existing.endsAt : dto.endsAt,
     );
 
-    return this.banners.update(id, {
+    const updated = await this.banners.update(id, {
       ...(dto.title === undefined ? {} : { title: dto.title }),
       ...(dto.subtitle === undefined ? {} : { subtitle: dto.subtitle }),
       ...(dto.imageUrl === undefined ? {} : { imageUrl: dto.imageUrl }),
@@ -55,6 +72,10 @@ export class BannerAdminService {
       ...window,
       ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
     });
+
+    if (updated.imageUrl !== existing.imageUrl) await this.media.remove(existing.imageUrl);
+
+    return updated;
   }
 
   /** The whole arrangement, checked to be a permutation — the same contract as image reordering. */
@@ -73,8 +94,10 @@ export class BannerAdminService {
   }
 
   async remove(id: string): Promise<void> {
-    await this.require(id);
+    const banner = await this.require(id);
+
     await this.banners.remove(id);
+    await this.media.remove(banner.imageUrl);
   }
 
   private window(

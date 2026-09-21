@@ -6,6 +6,7 @@ import { selectCardBadges } from '@/lib/badges';
 import { cn } from '@/lib/cn';
 import { discountPercent, formatCount, formatIdr, formatRating } from '@/lib/formatters';
 import type { ProductSummary } from '../schema';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * DESIGN.md §3.4.
@@ -54,12 +55,7 @@ export function ProductCard({ product, isPriority = false, className }: ProductC
             // Matches the grid: 5 up at ≥1280, 4 at 1024, 3 at 768, 2 on mobile (DESIGN.md §3.2).
             sizes="(min-width: 1280px) 240px, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
             priority={isPriority}
-            // Seed imagery is generated SVG (Phase 2), and Next refuses to run SVG through the
-            // optimizer unless `dangerouslyAllowSVG` is set globally — which would also apply to
-            // the operator-uploaded images Phase 9 adds, where an SVG is a script vector. Vectors
-            // have nothing to optimise anyway, so they bypass it here instead and the unsafe flag
-            // never gets turned on. Real raster photography optimises normally.
-            unoptimized={product.image.url.endsWith('.svg')}
+            unoptimized={isVectorImage(product.image.url)}
             // Scales inside its clip on hover. No lift, no shadow (DESIGN.md §3.4).
             className="object-cover transition-transform duration-base ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
           />

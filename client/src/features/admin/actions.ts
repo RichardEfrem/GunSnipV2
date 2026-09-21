@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { adminApiFetch } from '@/lib/admin-api';
+import { MAX_IMAGE_UPLOAD_BYTES } from '@/lib/constants';
 import { adminBannerListSchema, adminOrderSchema, adminProductSchema, adminReviewSchema, adminVoucherSchema, referenceItemSchema, stockLevelSchema } from './schema';
 import { toActionResult, type ActionResult } from './action-result';
 import { z } from 'zod';
@@ -44,6 +45,19 @@ function integer(form: FormData, field: string): number | undefined {
 function nullableInteger(form: FormData, field: string): number | null | undefined {
   if (!form.has(field)) return undefined;
   return text(form, field) === undefined ? null : integer(form, field);
+}
+
+/** A picked file, or `undefined` when the input was left empty — a browser still sends an empty part. */
+function file(form: FormData, field: string): File | undefined {
+  const value = form.get(field);
+  return value instanceof File && value.size > 0 ? value : undefined;
+}
+
+/** Caught here so an oversized photo fails with a sentence rather than a round trip to a 413. */
+function oversized(image: File): ActionResult | undefined {
+  return image.size > MAX_IMAGE_UPLOAD_BYTES
+    ? { status: 'error', message: `That image is over ${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024} MB. Choose a smaller one.` }
+    : undefined;
 }
 
 function checkbox(form: FormData, field: string): boolean {
@@ -253,14 +267,15 @@ export async function uploadImageAction(
   _previous: ActionResult,
   form: FormData,
 ): Promise<ActionResult> {
-  const file = form.get('file');
+  const image = file(form, 'file');
 
-  if (!(file instanceof File) || file.size === 0) {
-    return { status: 'error', message: 'Choose an image to upload.' };
-  }
+  if (image === undefined) return { status: 'error', message: 'Choose an image to upload.' };
+
+  const tooLarge = oversized(image);
+  if (tooLarge !== undefined) return tooLarge;
 
   const upload = new FormData();
-  upload.set('file', file);
+  upload.set('file', image);
   upload.set('alt', text(form, 'alt') ?? '');
 
   const result = await toActionResult(
@@ -603,11 +618,11 @@ export async function replyToReviewAction(
 
 // --------------------------------------------------------------------------------- banners
 
-function bannerBody(form: FormData): Record<string, unknown> {
+function bannerBody(form: FormData, imageUrl: string | undefined): Record<string, unknown> {
   return {
     title: text(form, 'title'),
     subtitle: nullableText(form, 'subtitle'),
-    imageUrl: text(form, 'imageUrl'),
+    ...(imageUrl === undefined ? {} : { imageUrl }),
     alt: text(form, 'alt'),
     href: text(form, 'href'),
     startsAt: text(form, 'startsAt') === undefined ? null : toIso(text(form, 'startsAt')),
@@ -616,25 +631,60 @@ function bannerBody(form: FormData): Record<string, unknown> {
   };
 }
 
+/**
+ * Uploads the picked banner image, if there is one, and returns the URL the API stored it under.
+ *
+ * Two requests rather than one multipart banner write: the banner's dates, booleans and position
+ * are JSON the DTO validates as such, and multipart would flatten every one of them to a string.
+ */
+async function uploadBannerImage(image: File): Promise<string> {
+  const upload = new FormData();
+  upload.set('file', image);
+
+  const { url } = await adminApiFetch('/admin/banners/images', {
+    method: 'POST',
+    schema: z.object({ url: z.string() }),
+    body: upload,
+  });
+
+  return url;
+}
+
 export async function createBannerAction(_previous: ActionResult, form: FormData): Promise<ActionResult> {
-  const result = await toActionResult(
-    () => adminApiFetch('/admin/banners', { method: 'POST', schema: z.object({ id: z.string() }), body: bannerBody(form) }),
-    'Banner created.',
-  );
+  const image = file(form, 'image');
+  if (image === undefined) return { status: 'error', message: 'Choose an image for the banner.' };
+
+  const tooLarge = oversized(image);
+  if (tooLarge !== undefined) return tooLarge;
+
+  const result = await toActionResult(async () => {
+    const imageUrl = await uploadBannerImage(image);
+    return adminApiFetch('/admin/banners', { method: 'POST', schema: z.object({ id: z.string() }), body: bannerBody(form, imageUrl) });
+  }, 'Banner created.');
 
   revalidateBanners();
   return result;
 }
 
+/** The image is optional on an edit: leaving the picker empty keeps the one the banner has. */
 export async function updateBannerAction(
   id: string,
   _previous: ActionResult,
   form: FormData,
 ): Promise<ActionResult> {
-  const result = await toActionResult(
-    () => adminApiFetch(`/admin/banners/${id}`, { method: 'PATCH', schema: z.object({ id: z.string() }), body: bannerBody(form) }),
-    'Banner saved.',
-  );
+  const image = file(form, 'image');
+
+  const tooLarge = image === undefined ? undefined : oversized(image);
+  if (tooLarge !== undefined) return tooLarge;
+
+  const result = await toActionResult(async () => {
+    const imageUrl = image === undefined ? undefined : await uploadBannerImage(image);
+    return adminApiFetch(`/admin/banners/${id}`, {
+      method: 'PATCH',
+      schema: z.object({ id: z.string() }),
+      body: bannerBody(form, imageUrl),
+    });
+  }, 'Banner saved.');
 
   revalidateBanners();
   return result;

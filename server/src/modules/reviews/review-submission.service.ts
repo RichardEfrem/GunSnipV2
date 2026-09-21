@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { isUserActor, type Actor } from '@gunsnip/shared';
+import { ValidationError } from '../../common/errors/validation.error.js';
+import { MediaStorage, type UploadedFile } from '../media/media-storage.js';
 import type { SubmitReviewDto } from './dto/submit-review.dto.js';
 import { ReviewInviteService } from './review-invite.service.js';
 import { ReviewRepository } from './review.repository.js';
@@ -14,17 +16,39 @@ import { ReviewRepository } from './review.repository.js';
  *
  * Everything lands `PENDING`. Nothing a customer writes reaches the storefront, or the rating on
  * a product card, until a moderator approves it (FR-REV-06).
+ *
+ * Photos are uploaded one at a time before the review is posted, and the review then names the
+ * URLs it was given. Only URLs this server issued for review photos are accepted, so a review
+ * cannot hotlink an image from anywhere else onto a product page.
  */
 @Injectable()
 export class ReviewSubmissionService {
   constructor(
     private readonly invites: ReviewInviteService,
     private readonly reviews: ReviewRepository,
+    private readonly media: MediaStorage,
   ) {}
+
+  /** Checks the link is still good before a single byte is written, then compresses and stores. */
+  async uploadPhoto(token: string, file: UploadedFile | undefined): Promise<{ url: string }> {
+    if (file === undefined) throw new ValidationError('No photo was attached.', {});
+
+    await this.invites.requireUsable(token);
+
+    const { url } = await this.media.store(file, 'reviews');
+    return { url };
+  }
 
   async submit(actor: Actor, dto: SubmitReviewDto): Promise<{ id: string; status: 'PENDING' }> {
     const now = new Date();
     const invite = await this.invites.requireUsable(dto.token, now);
+
+    const foreign = (dto.photos ?? []).filter((photo) => !this.media.isStored(photo.url, 'reviews'));
+    if (foreign.length > 0) {
+      throw new ValidationError('Review photos have to be uploaded here first.', {
+        urls: foreign.map((photo) => photo.url),
+      });
+    }
 
     // Non-null by `requireUsable`, which refuses an invite whose product has been deleted.
     const product = invite.orderItem.variant?.product;

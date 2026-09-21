@@ -1,7 +1,9 @@
 import type { INestApplication } from '@nestjs/common';
+import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adminClient, seededRefs, unique, type AdminClient } from './admin-helpers.js';
 import { createTestApp } from './create-test-app.js';
+import { pngFixture } from './image-fixtures.js';
 
 /**
  * Reference data, vouchers, reviews, banners and the dashboard (FR-ADM-01, FR-ADM-09 …
@@ -392,6 +394,32 @@ describe('Admin catalogue', () => {
         ...overrides,
       };
     }
+
+    it('takes an uploaded image, and deletes it once the banner stops using it', async () => {
+      const http = request(app.getHttpServer());
+      const uploadImage = async (): Promise<string> => {
+        const { body } = await admin
+          .raw()
+          .post('/api/v1/admin/banners/images')
+          .set('x-admin-key', admin.key)
+          .attach('file', await pngFixture(), { filename: 'banner.png', contentType: 'image/png' })
+          .expect(201);
+
+        return body.url as string;
+      };
+
+      const first = await uploadImage();
+      expect(first).toMatch(/^\/media\/uploads\/banners\/[0-9a-f-]{36}\.webp$/);
+
+      const { body: banner } = await admin.post('/admin/banners', bannerBody({ imageUrl: first })).expect(201);
+      track('/admin/banners', banner);
+
+      const second = await uploadImage();
+      await admin.patch(`/admin/banners/${banner.id}`, { imageUrl: second }).expect(200);
+
+      await http.get(first).expect(404);
+      await http.get(second).expect(200).expect('Content-Type', 'image/webp');
+    });
 
     it('creates a banner that is live straight away', async () => {
       const { body } = await admin.post('/admin/banners', bannerBody()).expect(201);

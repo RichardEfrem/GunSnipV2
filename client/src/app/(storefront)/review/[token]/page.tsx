@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { fetchReviewInvite } from '@/features/reviews/api';
 import { ReviewForm } from '@/features/reviews/components/ReviewForm';
 import type { ReviewInvite } from '@/features/reviews/schema';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * Writing a review from the link in the delivery email (FR-REV-02).
@@ -60,6 +61,7 @@ export default async function ReviewInvitePage({ params }: PageProps<'/review/[t
               alt=""
               width={64}
               height={64}
+              unoptimized={isVectorImage(invite.product.imageUrl)}
               className="size-16 shrink-0 rounded-sm object-cover"
             />
           )}

@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   const reviews = await seedReviews();
   console.log(
     `  reviews     ${reviews.reviews} across ${reviews.reviewedProducts} products ` +
-      `(${reviews.pending} awaiting moderation)`,
+      `(${reviews.pending} awaiting moderation · ${reviews.withPhotos} with ${reviews.photos} photos)`,
   );
 
   const history = await seedHistory();

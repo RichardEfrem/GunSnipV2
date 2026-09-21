@@ -9,8 +9,9 @@ export const metadata: Metadata = {
 /**
  * The back-office sign-in (PRD §11.2).
  *
- * Outside the admin layout on purpose — it has no sidebar and no data, and putting it inside
- * would mean the layout's own auth check redirecting to a page inside itself.
+ * Outside the `(shell)` group on purpose — it has no sidebar and no data, and putting it inside
+ * would mean the shell layout's own auth check redirecting to a page inside itself, which is a
+ * redirect loop rather than a sign-in page.
  */
 export default async function AdminSignInPage({ searchParams }: PageProps<'/admin/sign-in'>) {
   const { next } = await searchParams;

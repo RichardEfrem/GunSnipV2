@@ -16,7 +16,7 @@ import { Type } from 'class-transformer';
 import { DIFFICULTIES, type Difficulty } from '@gunsnip/shared';
 import { Trim } from '../../../common/transforms/text.js';
 
-/** One photo on a review (FR-REV-01). Uploaded first; the review carries the resulting URLs. */
+/** One photo on a review (FR-REV-01). Uploaded first to `POST /reviews/photos`; the review carries the URL it returned. */
 export class ReviewPhotoDto {
   @IsUrl({ require_protocol: false, require_host: false, require_tld: false })
   @MaxLength(500)

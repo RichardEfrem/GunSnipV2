@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { RateLimitModule } from '../../common/rate-limit/rate-limit.module.js';
+import { MediaModule } from '../media/media.module.js';
 import { ProductReviewsController } from './product-reviews.controller.js';
 import { ReviewInviteRepository } from './review-invite.repository.js';
 import { ReviewInviteService } from './review-invite.service.js';
@@ -21,6 +23,7 @@ import { ReviewsController } from './reviews.controller.js';
  * carries the links is the notification module's.
  */
 @Module({
+  imports: [MediaModule, RateLimitModule],
   controllers: [ProductReviewsController, ReviewsController],
   providers: [
     ReviewInviteRepository,

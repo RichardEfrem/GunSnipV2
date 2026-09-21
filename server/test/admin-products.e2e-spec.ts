@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adminClient, seededRefs, unique, type AdminClient } from './admin-helpers.js';
 import { createTestApp } from './create-test-app.js';
+import { pngFixture } from './image-fixtures.js';
 
 /**
  * Product CRUD, variants, images and requirements (FR-ADM-02 … FR-ADM-06), against a real
@@ -372,6 +373,48 @@ describe('Admin products', () => {
     });
   });
 
+  describe('images (FR-ADM-04)', () => {
+    function upload(productId: string, file: Buffer, filename: string, contentType: string): request.Test {
+      return admin
+        .raw()
+        .post(`/api/v1/admin/products/${productId}/images`)
+        .set('x-admin-key', admin.key)
+        .field('alt', 'The kit posed against a panel-lined plate')
+        .attach('file', file, { filename, contentType });
+    }
+
+    it('compresses an upload to WebP and removes the file with the row', async () => {
+      const product = await createKit();
+
+      const { body } = await upload(product.id, await pngFixture(), 'front.png', 'image/png').expect(201);
+      const image = (body.images as { id: string; url: string; blurDataUrl: string }[])[0];
+
+      expect(image?.url).toMatch(/^\/media\/uploads\/products\/[0-9a-f-]{36}\.webp$/);
+      expect(image?.blurDataUrl.startsWith('data:image/webp;base64,')).toBe(true);
+
+      const http = request(app.getHttpServer());
+      await http.get(image?.url ?? '').expect(200);
+
+      await admin.delete(`/admin/images/${image?.id}`).expect(200);
+      await http.get(image?.url ?? '').expect(404);
+    });
+
+    it('refuses an SVG, which could carry script', async () => {
+      const product = await createKit();
+      const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>');
+
+      const { body } = await upload(product.id, svg, 'logo.svg', 'image/svg+xml').expect(400);
+
+      expect(body.error.message).toMatch(/JPEG, PNG or WebP/);
+    });
+
+    it('decides the format from the bytes, not the label', async () => {
+      const product = await createKit();
+
+      await upload(product.id, Buffer.from('not an image'), 'front.jpg', 'image/jpeg').expect(400);
+    });
+  });
+
   /** DoD §13.9 — the phase's exit criterion, ending on the storefront's own endpoints. */
   describe('DoD §13.9: a product created in admin appears on the storefront', () => {
     it('goes from nothing to a live, buyable product', async () => {
@@ -405,10 +448,7 @@ describe('Admin products', () => {
         .post(`/api/v1/admin/products/${created.id}/images`)
         .set('x-admin-key', admin.key)
         .field('alt', 'The Exit Criterion Gundam posed against a panel-lined plate')
-        .attach('file', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>'), {
-          filename: 'exit.svg',
-          contentType: 'image/svg+xml',
-        })
+        .attach('file', await pngFixture(), { filename: 'exit.png', contentType: 'image/png' })
         .expect(201);
 
       const { body: live } = await admin
@@ -429,6 +469,10 @@ describe('Admin products', () => {
       });
       expect(storefront.images).toHaveLength(1);
       expect(storefront.images[0].alt).toMatch(/panel-lined plate/);
+
+      // Stored as a WebP whatever was uploaded, and served by the API from its own disk.
+      expect(storefront.images[0].url).toMatch(/^\/media\/uploads\/products\/[0-9a-f-]{36}\.webp$/);
+      await http.get(storefront.images[0].url).expect(200).expect('Content-Type', 'image/webp');
 
       // And reachable through the listing, not only by its own slug.
       const { body: listing } = await http.get(`/api/v1/products?limit=60&sort=newest`).expect(200);

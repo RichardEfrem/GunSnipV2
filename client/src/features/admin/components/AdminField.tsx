@@ -2,6 +2,7 @@
 
 import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { IMAGE_UPLOAD_ACCEPT, IMAGE_UPLOAD_HINT } from '@/lib/constants';
 
 /**
  * The back office's form controls.
@@ -52,6 +53,37 @@ export function AdminInput({ label, hint, isOptional, className, ...props }: Adm
   return (
     <FieldShell id={id} label={label} hint={hint} isOptional={isOptional} className={className}>
       <input {...props} id={id} className={CONTROL} />
+    </FieldShell>
+  );
+}
+
+interface AdminImageInputProps {
+  label: string;
+  name: string;
+  isRequired?: boolean;
+  isOptional?: boolean;
+  /** Replaces the default hint, which names the accepted formats and the size cap. */
+  hint?: string;
+  className?: string;
+}
+
+/**
+ * A file picker limited to the formats the API accepts. The API re-encodes to WebP whatever it
+ * is given, so this narrows the picker to spare an operator a refusal — it is not the check.
+ */
+export function AdminImageInput({ label, name, isRequired = false, isOptional, hint, className }: AdminImageInputProps) {
+  const id = useId();
+
+  return (
+    <FieldShell id={id} label={label} hint={hint ?? IMAGE_UPLOAD_HINT} isOptional={isOptional} className={className}>
+      <input
+        id={id}
+        name={name}
+        type="file"
+        accept={IMAGE_UPLOAD_ACCEPT}
+        required={isRequired}
+        className="text-sm file:mr-3 file:rounded-sm file:border file:border-core-blue file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:text-core-blue"
+      />
     </FieldShell>
   );
 }

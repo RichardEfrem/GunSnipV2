@@ -5,6 +5,7 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import { CART_SOURCE_ATTRIBUTE } from '@/features/cart/cart-arc';
 import { cn } from '@/lib/cn';
 import type { ProductDetail } from '../schema';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * The product gallery (FR-PDP-01, DESIGN.md §3.5) — a main image over a thumbnail strip.
@@ -84,7 +85,7 @@ export function ProductGallery({ product }: ProductGalleryProps) {
               sizes="(min-width: 1024px) 560px, 100vw"
               // The first image is the page's LCP element on every product page.
               priority={index === 0}
-              unoptimized={image.url.endsWith('.svg')}
+              unoptimized={isVectorImage(image.url)}
               className="object-cover"
             />
           </div>
@@ -116,7 +117,7 @@ export function ProductGallery({ product }: ProductGalleryProps) {
                 alt=""
                 fill
                 sizes="64px"
-                unoptimized={image.url.endsWith('.svg')}
+                unoptimized={isVectorImage(image.url)}
                 className="object-cover"
               />
               <span className="sr-only">

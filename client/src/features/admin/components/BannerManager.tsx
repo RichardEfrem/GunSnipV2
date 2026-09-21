@@ -9,8 +9,9 @@ import { IDLE, type ActionResult } from '../action-result';
 import { createBannerAction, deleteBannerAction, reorderBannersAction, updateBannerAction } from '../actions';
 import type { AdminBanner } from '../schema';
 import { ActionFeedback } from './ActionFeedback';
-import { AdminCheckbox, AdminFormGrid, AdminInput } from './AdminField';
+import { AdminCheckbox, AdminFormGrid, AdminImageInput, AdminInput } from './AdminField';
 import { AdminPanel, AdminTable, Td, Th } from './AdminPanel';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * Banner curation (FR-ADM-12, FR-PROMO-04).
@@ -91,6 +92,7 @@ export function BannerManager({ banners }: { banners: AdminBanner[] }) {
                         alt={banner.alt}
                         width={64}
                         height={40}
+                        unoptimized={isVectorImage(banner.imageUrl)}
                         className="h-10 w-16 shrink-0 rounded-sm object-cover"
                       />
                       <div className="min-w-0">
@@ -180,15 +182,26 @@ function BannerForm({ banner, onDone }: { banner?: AdminBanner; onDone: () => vo
         <AdminInput label="Title" name="title" defaultValue={banner?.title ?? ''} required minLength={2} maxLength={120} />
         <AdminInput label="Subtitle" name="subtitle" defaultValue={banner?.subtitle ?? ''} isOptional maxLength={200} />
 
-        <AdminInput
-          label="Image URL"
-          name="imageUrl"
-          defaultValue={banner?.imageUrl ?? ''}
-          required
-          maxLength={500}
-          placeholder="/media/products/mg-exia-0.svg"
-          hint="A path under /media, the same place product images live."
-        />
+        <div className="flex items-end gap-3">
+          {isNew ? null : (
+            <Image
+              src={banner.imageUrl}
+              alt=""
+              width={64}
+              height={40}
+              unoptimized={isVectorImage(banner.imageUrl)}
+              className="h-10 w-16 shrink-0 rounded-sm object-cover"
+            />
+          )}
+          <AdminImageInput
+            label={isNew ? 'Image' : 'Replace image'}
+            name="image"
+            isRequired={isNew}
+            isOptional={!isNew}
+            className="min-w-0 flex-1"
+            hint={isNew ? undefined : 'Leave empty to keep the current image.'}
+          />
+        </div>
 
         <AdminInput
           label="Links to"

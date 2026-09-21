@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MediaModule } from '../media/media.module.js';
 import { BannerAdminService } from './banner-admin.service.js';
 import { BannerRepository } from './banner.repository.js';
 import { BundleRepository } from './bundle.repository.js';
@@ -13,7 +14,6 @@ import { HomeController } from './home.controller.js';
 import { HomeRepository } from './home.repository.js';
 import { HomeService } from './home.service.js';
 import { ImageAdminService } from './image-admin.service.js';
-import { MediaStorage } from './media-storage.js';
 import { ProductAdminService } from './product-admin.service.js';
 import { ProductWriteRepository } from './product-write.repository.js';
 import { ProductRepository } from './product.repository.js';
@@ -38,6 +38,7 @@ import { VariantAdminService } from './variant-admin.service.js';
  * to carry the identical filter rail, which means the identical counts from the identical code.
  */
 @Module({
+  imports: [MediaModule],
   controllers: [ProductsController, CategoriesController, HomeController, BundlesController],
   providers: [
     CatalogService,
@@ -67,7 +68,6 @@ import { VariantAdminService } from './variant-admin.service.js';
     ProductWriteRepository,
     ReferenceWriteRepository,
     BannerRepository,
-    MediaStorage,
   ],
   // `RequirementService` is exported for the cart: adding a kit's tools in one action
   // (FR-PDP-08) means the cart has to resolve the same list the product page showed.

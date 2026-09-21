@@ -27,7 +27,7 @@ import { UpdateImageDto, UploadImageDto } from '../catalog/dto/write-image.dto.j
 import { CreateProductDto, UpdateProductDto } from '../catalog/dto/write-product.dto.js';
 import { SetRequirementsDto } from '../catalog/dto/write-requirement.dto.js';
 import { CreateVariantDto, UpdateVariantDto } from '../catalog/dto/write-variant.dto.js';
-import { MAX_IMAGE_BYTES, type UploadedFile as StoredUpload } from '../catalog/media-storage.js';
+import { MAX_IMAGE_BYTES, type UploadedFile as StoredUpload } from '../media/media-storage.js';
 import type { AdminProduct, AdminProductSummary } from '../catalog/entities/admin-product.entity.js';
 import { SetProductStatusDto } from './dto/set-product-status.dto.js';
 import { IdParamDto, ImageIdParamDto, VariantIdParamDto } from './dto/id-param.dto.js';
@@ -89,9 +89,10 @@ export class AdminProductsController {
   // ----------------------------------------------------------------------- images (FR-ADM-04)
 
   /**
-   * Multipart upload. The size cap is enforced twice on purpose: here, so a too-large body is
-   * refused before it is buffered in memory, and again in `MediaStorage`, which is the rule's
-   * home and is reachable from a caller that does not come through this interceptor.
+   * Multipart upload, compressed to WebP on arrival. The size cap is enforced twice on purpose:
+   * here, so a too-large body is refused before it is buffered in memory, and again in
+   * `MediaStorage`, which is the rule's home and is reachable from a caller that does not come
+   * through this interceptor.
    */
   @Post(':id/images')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMAGE_BYTES, files: 1 } }))

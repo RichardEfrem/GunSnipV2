@@ -4,6 +4,7 @@ import { DIFFICULTY_LABELS } from '@/lib/labels';
 import { formatDate } from '@/lib/formatters';
 import type { ProductReview } from '../schema';
 import { StarRating } from './StarRating';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * One review (FR-REV-01, FR-REV-03, FR-REV-04).
@@ -51,6 +52,7 @@ export function ReviewCard({ review }: { review: ProductReview }) {
                 alt={photo.alt}
                 width={96}
                 height={96}
+                unoptimized={isVectorImage(photo.url)}
                 className="size-24 rounded-sm border border-armor-150 object-cover"
               />
             </li>

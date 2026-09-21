@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { DIFFICULTY_LABELS } from '@/lib/labels';
 import { submitReview } from '../client-api';
+import { useReviewPhotos } from '../hooks/use-review-photos';
 import type { ReviewInvite } from '../schema';
 import { RatingInput } from './RatingInput';
+import { ReviewPhotoPicker } from './ReviewPhotoPicker';
 
 /**
  * Writing a review against an invite (FR-REV-01, FR-REV-04).
@@ -30,6 +32,7 @@ interface Errors {
   authorName?: string;
   title?: string;
   body?: string;
+  photos?: string;
 }
 
 export function ReviewForm({ invite }: { invite: ReviewInvite }) {
@@ -40,6 +43,7 @@ export function ReviewForm({ invite }: { invite: ReviewInvite }) {
   const [buildHours, setBuildHours] = useState('');
   const [difficulty, setDifficulty] = useState<Difficulty | ''>('');
   const [tools, setTools] = useState('');
+  const photos = useReviewPhotos(invite.token);
 
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -55,7 +59,17 @@ export function ReviewForm({ invite }: { invite: ReviewInvite }) {
         body.trim().length < MIN_BODY
           ? 'Say a little more — what was the build actually like?'
           : undefined,
+      photos: photos.isUploading
+        ? 'Wait a moment — a photo is still uploading.'
+        : readyPhotos().some((photo) => photo.alt.trim().length < 2)
+          ? 'Describe each photo in a few words.'
+          : undefined,
     };
+  }
+
+  /** Only photos that made it up; a failed one is shown with its reason and simply not sent. */
+  function readyPhotos(): { url: string; alt: string }[] {
+    return photos.photos.flatMap((photo) => (photo.status === 'ready' ? [{ url: photo.url, alt: photo.alt }] : []));
   }
 
   async function onSubmit(event: React.FormEvent): Promise<void> {
@@ -84,6 +98,7 @@ export function ReviewForm({ invite }: { invite: ReviewInvite }) {
         ...(invite.isKit && tools.trim() !== ''
           ? { toolsUsed: tools.split(',').map((tool) => tool.trim()).filter((tool) => tool !== '') }
           : {}),
+        photos: readyPhotos().map((photo) => ({ url: photo.url, alt: photo.alt.trim() })),
       });
 
       setIsDone(true);
@@ -181,6 +196,15 @@ export function ReviewForm({ invite }: { invite: ReviewInvite }) {
           />
         </fieldset>
       ) : null}
+
+      <ReviewPhotoPicker
+        photos={photos.photos}
+        canAddMore={photos.canAddMore}
+        onAdd={photos.add}
+        onDescribe={photos.describe}
+        onRemove={photos.remove}
+        error={errors.photos}
+      />
 
       {failure === null ? null : (
         <p role="alert" className="text-sm text-danger">

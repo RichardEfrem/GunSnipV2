@@ -8,6 +8,7 @@ import {
   type ReviewTone,
 } from '../data/reviews.ts';
 import { randomFor } from '../random.ts';
+import { clearReviewPhotos, writeReviewPhoto } from '../review-photo-placeholder.ts';
 
 /**
  * Reviews, and the two counters on `product` that are derived from them.
@@ -33,6 +34,7 @@ import { randomFor } from '../random.ts';
 interface ReviewSeedProduct {
   id: string;
   slug: string;
+  name: string;
   type: 'MODEL_KIT' | 'TOOL_SUPPLY';
   runtimeMinutesEst: number | null;
 }
@@ -42,6 +44,9 @@ export interface ReviewResult {
   reviewedProducts: number;
   /** Left awaiting moderation, so the Phase 9 queue is never empty on a fresh seed. */
   pending: number;
+  /** Approved reviews carrying at least one photo, which is what FR-REV-05's filter counts. */
+  withPhotos: number;
+  photos: number;
 }
 
 /** Roughly one product in six has none, so the empty state is reachable from the storefront. */
@@ -56,44 +61,84 @@ const UNREVIEWED_CHANCE = 1 / 6;
  */
 const PENDING_CHANCE = 1 / 12;
 
+/**
+ * How often an approved kit review comes with build photos (FR-REV-01, FR-REV-05).
+ *
+ * A quarter: high enough that the photos-only filter has a populated result on most products
+ * rather than an empty state pretending to be a filter, low enough that the unfiltered list is
+ * still mostly text and the filter therefore still removes something.
+ *
+ * Kits only. The placeholder is a built mobile suit on a desk, and attaching one to a review of
+ * a bottle of cement would be a picture of the wrong thing.
+ */
+const PHOTO_CHANCE = 1 / 4;
+
 export async function seedReviews(): Promise<ReviewResult> {
   const products = await prisma.product.findMany({
-    select: { id: true, slug: true, type: true, runtimeMinutesEst: true },
+    select: { id: true, slug: true, name: true, type: true, runtimeMinutesEst: true },
     orderBy: { slug: 'asc' },
   });
+
+  await clearReviewPhotos();
 
   let reviews = 0;
   let reviewedProducts = 0;
   let pending = 0;
+  let withPhotos = 0;
+  let photos = 0;
 
   for (const product of products) {
     const written = await createReviewsFor(product);
 
     reviews += written.approved + written.pending;
     pending += written.pending;
+    withPhotos += written.withPhotos;
+    photos += written.photos;
     if (written.approved > 0) reviewedProducts += 1;
   }
 
-  return { reviews, reviewedProducts, pending };
+  return { reviews, reviewedProducts, pending, withPhotos, photos };
 }
 
-async function createReviewsFor(product: ReviewSeedProduct): Promise<{ approved: number; pending: number }> {
+async function createReviewsFor(
+  product: ReviewSeedProduct,
+): Promise<{ approved: number; pending: number; withPhotos: number; photos: number }> {
   const random = randomFor(`reviews:${product.slug}`);
 
+  /**
+   * Photos draw from their own stream rather than from `random`.
+   *
+   * Sharing it would mean every draw made here shifted the ratings and moderation states of
+   * the reviews after it — the same reason the file keys each product's stream off its slug.
+   * A separate stream keeps this feature additive: the shop's ratings are the numbers they
+   * were before photos existed.
+   */
+  const photoRandom = randomFor(`review-photos:${product.slug}`);
+
   if (random.chance(UNREVIEWED_CHANCE)) {
-    return { approved: 0, pending: 0 };
+    return { approved: 0, pending: 0, withPhotos: 0, photos: 0 };
   }
 
   const tones = product.type === 'MODEL_KIT' ? KIT_REVIEW_TONES : TOOL_REVIEW_TONES;
   const count = random.int(3, 26);
   const ratings: number[] = [];
   let pending = 0;
+  let withPhotos = 0;
+  let photos = 0;
 
   for (let index = 0; index < count; index += 1) {
     const tone = pickTone(tones, random.next());
     const rating = random.pick(tone.ratings);
     const isPending = random.chance(PENDING_CHANCE);
     const createdAt = reviewDate(random);
+
+    // Only approved reviews get photos: a pending one has not been looked at, and the
+    // photos-only filter counts approved rows, so a pending review with photos would inflate
+    // nothing and demonstrate nothing.
+    const photoCount =
+      product.type === 'MODEL_KIT' && !isPending && photoRandom.chance(PHOTO_CHANCE)
+        ? photoRandom.int(1, 3)
+        : 0;
 
     await prisma.review.create({
       data: {
@@ -113,8 +158,14 @@ async function createReviewsFor(product: ReviewSeedProduct): Promise<{ approved:
         isVerifiedPurchase: false,
         ...kitFields(product, rating, random),
         createdAt,
+        photos: { create: await buildPhotos(product, index, photoCount) },
       },
     });
+
+    if (photoCount > 0) {
+      withPhotos += 1;
+      photos += photoCount;
+    }
 
     if (isPending) pending += 1;
     else ratings.push(rating);
@@ -129,7 +180,31 @@ async function createReviewsFor(product: ReviewSeedProduct): Promise<{ approved:
     },
   });
 
-  return { approved: ratings.length, pending };
+  return { approved: ratings.length, pending, withPhotos, photos };
+}
+
+/**
+ * Writes the files and returns the rows to nest under the review.
+ *
+ * The alt text describes the build rather than saying "review photo" (DESIGN.md §6) — a
+ * screen reader gets what a sighted reader gets, which is somebody's finished kit.
+ */
+async function buildPhotos(
+  product: ReviewSeedProduct,
+  reviewIndex: number,
+  count: number,
+): Promise<{ url: string; alt: string; position: number }[]> {
+  const rows = [];
+
+  for (let index = 0; index < count; index += 1) {
+    rows.push({
+      url: await writeReviewPhoto({ slug: product.slug, reviewIndex, index }),
+      alt: `A builder's finished ${product.name}, photographed on a desk`,
+      position: index * 10,
+    });
+  }
+
+  return rows;
 }
 
 /**

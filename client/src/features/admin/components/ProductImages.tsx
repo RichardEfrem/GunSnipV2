@@ -8,8 +8,9 @@ import { IDLE, type ActionResult } from '../action-result';
 import { deleteImageAction, reorderImagesAction, setPrimaryImageAction, uploadImageAction } from '../actions';
 import type { AdminProduct } from '../schema';
 import { ActionFeedback } from './ActionFeedback';
-import { AdminInput } from './AdminField';
+import { AdminImageInput, AdminInput } from './AdminField';
 import { AdminPanel } from './AdminPanel';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * Product imagery (FR-ADM-04): upload, reorder, designate a primary, remove.
@@ -56,6 +57,7 @@ export function ProductImages({ product }: { product: AdminProduct }) {
                 width={80}
                 height={80}
                 placeholder="blur"
+                unoptimized={isVectorImage(image.url)}
                 blurDataURL={image.blurDataUrl}
                 className="size-20 shrink-0 rounded-sm object-cover"
               />
@@ -112,19 +114,7 @@ export function ProductImages({ product }: { product: AdminProduct }) {
 
       <form action={uploadAction} className="flex flex-col gap-4 border-t border-armor-150 pt-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="image-file" className="text-xs font-medium text-frame-300">
-              Image file
-            </label>
-            <input
-              id="image-file"
-              name="file"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/avif,image/svg+xml"
-              required
-              className="text-sm file:mr-3 file:rounded-sm file:border file:border-core-blue file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:text-core-blue"
-            />
-          </div>
+          <AdminImageInput label="Image file" name="file" isRequired />
 
           <AdminInput
             label="Alt text"

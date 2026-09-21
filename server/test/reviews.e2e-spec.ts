@@ -7,6 +7,7 @@ import { adminClient, type AdminClient } from './admin-helpers.js';
 import { addToCart, masterGradeKit, newSession, type GuestSession } from './cart-helpers.js';
 import { jakartaDistrict, orderBodyFrom, placeOrder, quote } from './checkout-helpers.js';
 import { createTestApp } from './create-test-app.js';
+import { pngFixture } from './image-fixtures.js';
 
 /**
  * Reviews end to end (FR-REV-01 … FR-REV-06), against a real database.
@@ -99,6 +100,56 @@ describe('Reviews', () => {
 
     it('404s a token nobody issued', async () => {
       await http.get(`/api/v1/reviews/invites/${randomUUID()}`).expect(404);
+    });
+  });
+
+  describe('photos (FR-REV-01)', () => {
+    let png: Buffer;
+
+    beforeAll(async () => {
+      png = await pngFixture();
+    });
+
+    function uploadPhoto(token: string): request.Test {
+      return http
+        .post('/api/v1/reviews/photos')
+        .field('token', token)
+        .attach('file', png, { filename: 'build.png', contentType: 'image/png' });
+    }
+
+    // One delivered order for the whole block: every spec buys from the same seeded stock, and a
+    // refused submission does not spend the invite, so the refusal and the success can share it.
+    it('accepts only photos uploaded here, compressed, against a live invite', async () => {
+      const { orderNumber, session } = await deliveredOrder();
+      const token = await inviteTokenFor(orderNumber);
+
+      const review = (photos: { url: string; alt: string }[]) =>
+        http.post('/api/v1/reviews').set('Cookie', session.cookie).send({
+          token,
+          rating: 5,
+          authorName: 'Amuro',
+          title: 'Look at this',
+          body: 'Photo of the finished build, panel lined and top coated.',
+          photos,
+        });
+
+      const { body: refused } = await review([
+        { url: 'https://elsewhere.example/exia.jpg', alt: "Someone else's Exia" },
+      ]).expect(400);
+      expect(refused.error.message).toMatch(/uploaded here first/);
+
+      const { body: photo } = await uploadPhoto(token).expect(201);
+      expect(photo.url).toMatch(/^\/media\/uploads\/reviews\/[0-9a-f-]{36}\.webp$/);
+      await http.get(photo.url).expect(200).expect('Content-Type', 'image/webp');
+
+      const { body } = await review([{ url: photo.url, alt: 'The finished Exia, panel lined' }]).expect(201);
+
+      const photos = await prisma.reviewPhoto.findMany({ where: { reviewId: body.id } });
+      expect(photos.map((row) => row.url)).toEqual([photo.url]);
+    });
+
+    it('refuses an upload without a usable invite', async () => {
+      await uploadPhoto(randomUUID()).expect(404);
     });
   });
 

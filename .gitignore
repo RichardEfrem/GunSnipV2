@@ -39,3 +39,6 @@ PRD.md
 *.pem
 *.tsbuildinfo
 coverage/
+
+# uploaded images — written by the API at runtime (MEDIA_DIR)
+server/storage/

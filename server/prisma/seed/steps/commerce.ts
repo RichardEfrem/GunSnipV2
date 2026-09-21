@@ -1,3 +1,4 @@
+import { clearBannerPlaceholders, writeBannerPlaceholder } from '../banner-placeholder.ts';
 import { prisma } from '../client.ts';
 import { BANNERS, BUNDLES, VOUCHERS } from '../data/commerce.ts';
 import type { ReferenceIds } from './reference.ts';
@@ -54,14 +55,19 @@ export async function seedCommerce(
     });
   }
 
+  await clearBannerPlaceholders();
+
   for (const banner of BANNERS) {
+    // Generated rather than curated, like the product plates: the seed writes the file it
+    // points at, so the rail and the admin screen render something real. An operator replaces
+    // the path in admin (Banners → Edit → Image URL) when photography exists (FR-ADM-12).
+    const slug = banner.href.replaceAll('/', '-').replace(/^-/, '');
+
     await prisma.banner.create({
       data: {
         title: banner.title,
         subtitle: banner.subtitle,
-        // Banner artwork is out of scope for the seed; Phase 10 curates real imagery
-        // (FR-ADM-12). The path is shaped like the one an upload will produce.
-        imageUrl: `/media/banners/${banner.href.replaceAll('/', '-').replace(/^-/, '')}.svg`,
+        imageUrl: await writeBannerPlaceholder({ slug, code: banner.href }),
         alt: banner.alt,
         href: banner.href,
         position: banner.position,

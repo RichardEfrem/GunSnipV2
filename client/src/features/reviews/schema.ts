@@ -85,6 +85,12 @@ export const submittedReviewSchema = z.object({
   status: z.literal('PENDING'),
 });
 
+/** `POST /reviews/photos`: where the compressed photo now lives, for the review to name. */
+export const uploadedReviewPhotoSchema = z.object({ url: z.string() });
+
+/** A review carries at most this many photos (the server's `ArrayMaxSize`). */
+export const MAX_REVIEW_PHOTOS = 6;
+
 /** What the form sends. No product: the token already knows what is being reviewed. */
 export interface SubmitReviewBody {
   token: string;
@@ -95,4 +101,5 @@ export interface SubmitReviewBody {
   buildTimeMinutes?: number;
   experiencedDifficulty?: (typeof DIFFICULTIES)[number];
   toolsUsed?: string[];
+  photos?: { url: string; alt: string }[];
 }

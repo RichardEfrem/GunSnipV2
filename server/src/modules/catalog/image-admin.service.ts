@@ -5,7 +5,7 @@ import { toAdminProduct } from './admin-product-mapper.js';
 import type { UpdateImageDto, UploadImageDto } from './dto/write-image.dto.js';
 import type { ReorderDto } from './dto/reorder.dto.js';
 import type { AdminProduct } from './entities/admin-product.entity.js';
-import { MediaStorage, type UploadedFile } from './media-storage.js';
+import { MediaStorage, type UploadedFile } from '../media/media-storage.js';
 import { ProductWriteRepository } from './product-write.repository.js';
 
 /**
@@ -31,7 +31,7 @@ export class ImageAdminService {
       throw new NotFoundError('No product with that id.', { productId });
     }
 
-    const stored = await this.media.store(file);
+    const stored = await this.media.store(file, 'products');
 
     return toAdminProduct(await this.products.createImage(productId, { ...stored, alt: dto.alt }));
   }

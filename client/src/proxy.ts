@@ -49,7 +49,7 @@ const ADMIN_PREFIX = '/admin';
 const SIGN_IN = '/admin/sign-in';
 
 /**
- * Keeps `/admin/*` behind the sign-in page, and the sign-in page away from anyone already in.
+ * Keeps `/admin/*` behind the sign-in page.
  *
  * The real authority is the API's `AdminGuard`, which checks the key on every request and would
  * refuse an unauthenticated one regardless of what happens here. This is about not rendering a
@@ -60,6 +60,12 @@ const SIGN_IN = '/admin/sign-in';
  * proxy has no business validating. A stale or wrong key gets past here and is refused by the
  * API, which the admin layout turns back into a redirect to sign in.
  *
+ * Which is why sign-in stays reachable with the cookie set, rather than bouncing an
+ * already-signed-in operator to the dashboard. That bounce and the layout's redirect are the
+ * two halves of a loop: a cookie holding a key the API no longer accepts satisfies the check
+ * here, fails there, and the two send it back and forth until the browser gives up. Letting the
+ * form render is also the only way back in — re-entering the key overwrites the stale cookie.
+ *
  * Returns null when the request is not about admin at all, so the session-minting path below
  * runs exactly as it did before.
  */
@@ -67,14 +73,8 @@ function adminGate(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
   if (!pathname.startsWith(ADMIN_PREFIX)) return null;
 
-  const isSignedIn = request.cookies.has(ADMIN_COOKIE);
-  const isSignInPage = pathname === SIGN_IN;
-
-  if (isSignedIn) {
-    return isSignInPage ? NextResponse.redirect(new URL(ADMIN_PREFIX, request.url)) : null;
-  }
-
-  if (isSignInPage) return null;
+  if (pathname === SIGN_IN) return null;
+  if (request.cookies.has(ADMIN_COOKIE)) return null;
 
   const signIn = new URL(SIGN_IN, request.url);
   // Carried so signing in returns the operator to the page they asked for, rather than dropping

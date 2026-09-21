@@ -1,10 +1,27 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminGuard } from '../../common/guards/admin.guard.js';
 import type { CursorPage } from '../../common/pagination/cursor-page.js';
 import { BannerAdminService } from '../catalog/banner-admin.service.js';
 import type { AdminBanner } from '../catalog/banner.repository.js';
 import { ReorderDto } from '../catalog/dto/reorder.dto.js';
 import { CreateBannerDto, UpdateBannerDto } from '../catalog/dto/write-banner.dto.js';
+import { MAX_IMAGE_BYTES, type UploadedFile as StoredUpload } from '../media/media-storage.js';
 import { InventoryService } from '../inventory/inventory.service.js';
 import { AdjustStockDto } from '../inventory/dto/adjust-stock.dto.js';
 import { ListMovementsDto } from '../inventory/dto/list-movements.dto.js';
@@ -122,6 +139,13 @@ export class AdminCatalogueController {
   @Get('banners')
   async listBanners(): Promise<AdminBanner[]> {
     return this.banners.list();
+  }
+
+  /** Compressed to WebP and stored; the banner is then created or updated with the URL. */
+  @Post('banners/images')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMAGE_BYTES, files: 1 } }))
+  async uploadBannerImage(@UploadedFile() file: StoredUpload | undefined): Promise<{ url: string }> {
+    return this.banners.uploadImage(file);
   }
 
   @Post('banners')

@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import { cn } from '@/lib/cn';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * A product's image, square, on the armor backdrop (DESIGN.md §3.4) — the cart line, the mini
@@ -37,9 +38,7 @@ export function Thumbnail({ src, blurDataUrl, size, isDimmed = false, className 
           sizes={`${size}px`}
           placeholder={blurDataUrl === undefined ? 'empty' : 'blur'}
           blurDataURL={blurDataUrl}
-          // Generated SVG placeholders bypass the optimizer rather than turning on
-          // `dangerouslyAllowSVG` for everything — see ProductCard.
-          unoptimized={src.endsWith('.svg')}
+          unoptimized={isVectorImage(src)}
           className="object-cover"
         />
       )}

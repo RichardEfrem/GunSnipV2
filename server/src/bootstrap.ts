@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { resolve } from 'node:path';
 import cookieParser from 'cookie-parser';
 import { AppConfig } from './config/app-config.js';
 
@@ -13,6 +14,18 @@ export function configureApp(app: NestExpressApplication): void {
 
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
+
+  // Uploaded images, outside the API prefix: they are files, not endpoints. Every name is a fresh
+  // UUID that is never rewritten, so a year of immutable caching is exactly right. Only `.webp`
+  // is ever written there, so nothing served can be interpreted as a page or a script.
+  app.useStaticAssets(resolve(config.mediaDir), {
+    prefix: config.mediaPublicPath,
+    index: false,
+    dotfiles: 'deny',
+    immutable: true,
+    maxAge: '365d',
+    setHeaders: (response) => response.setHeader('X-Content-Type-Options', 'nosniff'),
+  });
 
   // Decides what Express reports as `req.ip`, which is what the order rate limiter buckets on.
   // A hop count rather than `true`: trusting the whole `X-Forwarded-For` chain would let a

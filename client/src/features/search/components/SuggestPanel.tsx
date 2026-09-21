@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { formatIdr } from '@/lib/formatters';
 import type { Suggestions } from '../schema';
+import { isVectorImage } from '@/lib/image';
 
 /**
  * The autosuggest dropdown (FR-SRCH-03).
@@ -76,6 +77,7 @@ export function SuggestPanel({
                   fill
                   sizes="40px"
                   placeholder="blur"
+                  unoptimized={isVectorImage(product.image.url)}
                   blurDataURL={product.image.blurDataUrl}
                   className="object-cover"
                 />

@@ -75,9 +75,11 @@ function svg({ slug, mark, code, index }: PlaceholderInput): string {
   const runners = 3 + (seed % 3);
   const chamfer = 64;
 
+  // `>>>`, not `>>`: `hash` returns up to 2^32 and a signed shift goes negative for half of
+  // all seeds, which made `% 5` negative and collapsed the runner to zero width.
   const lines = Array.from({ length: runners }, (_, i) => {
     const y = 300 + i * (400 / runners);
-    const width = 240 + ((seed >> (i * 3)) % 5) * 60;
+    const width = 240 + ((seed >>> (i * 3)) % 5) * 60;
     return `<rect x="${offset + 40}" y="${y}" width="${width}" height="18" rx="2" fill="#ffffff" opacity="0.65"/>`;
   }).join('');
 
