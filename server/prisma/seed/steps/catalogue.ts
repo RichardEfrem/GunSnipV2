@@ -1,4 +1,5 @@
-import { clearPlaceholders, writePlaceholder } from '../image-placeholder.ts';
+import { prunePlaceholders, writePlaceholder } from '../image-placeholder.ts';
+import { loadProductPhotos, type ProductPhoto } from '../product-photo.ts';
 import { prisma } from '../client.ts';
 import { KITS } from '../data/kits.ts';
 import { TOOLS } from '../data/tools.ts';
@@ -13,7 +14,11 @@ import type { ReferenceIds } from './reference.ts';
  * shares one timestamp cannot exercise either.
  */
 
-/** Three shots per product, which is enough for the PDP gallery to be worth navigating. */
+/**
+ * Three shots per product, which is enough for the PDP gallery to be worth navigating. It is
+ * the count for generated placeholders only; a photographed product ships whatever the
+ * manifest holds, because some supplies genuinely only have one usable shot.
+ */
 const IMAGES_PER_PRODUCT = 3;
 
 export interface CatalogueResult {
@@ -25,7 +30,8 @@ export interface CatalogueResult {
 }
 
 export async function seedCatalogue(refs: ReferenceIds): Promise<CatalogueResult> {
-  await clearPlaceholders();
+  await prunePlaceholders([...TOOLS, ...KITS].map((product) => product.slug));
+  const photos = await loadProductPhotos();
 
   const productIdBySlug = new Map<string, string>();
   const variantIdBySku = new Map<string, string>();
@@ -55,7 +61,7 @@ export async function seedCatalogue(refs: ReferenceIds): Promise<CatalogueResult
 
     productIdBySlug.set(tool.slug, product.id);
     variantCount += await createVariants(product.id, tool.variants, variantIdBySku);
-    imageCount += await createImages(product.id, tool.slug, 'TOOL', tool.variants[0].sku, tool.name);
+    imageCount += await createImages(product.id, tool.slug, 'TOOL', tool.variants[0].sku, tool.name, photos.get(tool.slug));
     index += 1;
   }
 
@@ -89,7 +95,7 @@ export async function seedCatalogue(refs: ReferenceIds): Promise<CatalogueResult
 
     productIdBySlug.set(kit.slug, product.id);
     variantCount += await createVariants(product.id, kit.variants, variantIdBySku);
-    imageCount += await createImages(product.id, kit.slug, kit.gradeCode, kit.unitCode, kit.name);
+    imageCount += await createImages(product.id, kit.slug, kit.gradeCode, kit.unitCode, kit.name, photos.get(kit.slug));
     index += 1;
   }
 
@@ -154,16 +160,32 @@ async function createVariants(
   return variants.length;
 }
 
+/**
+ * Real photography when the manifest has it, a generated placeholder otherwise.
+ *
+ * The two paths produce identical rows — a same-origin path under `public/` and a base64 blur
+ * — so nothing downstream has to know which one a product got. That is the whole reason the
+ * fetch script writes files into `public/` rather than storing a remote URL.
+ */
 async function createImages(
   productId: string,
   slug: string,
   mark: string,
   code: string,
   productName: string,
+  photos: readonly ProductPhoto[] | undefined,
 ): Promise<number> {
-  for (let index = 0; index < IMAGES_PER_PRODUCT; index += 1) {
-    const { url, blurDataUrl } = await writePlaceholder({ slug, mark, code, index });
+  const images: ProductPhoto[] = [];
 
+  if (photos === undefined) {
+    for (let index = 0; index < IMAGES_PER_PRODUCT; index += 1) {
+      images.push(await writePlaceholder({ slug, mark, code, index }));
+    }
+  } else {
+    images.push(...photos);
+  }
+
+  for (const [index, { url, blurDataUrl }] of images.entries()) {
     await prisma.productImage.create({
       data: {
         productId,
@@ -177,7 +199,7 @@ async function createImages(
     });
   }
 
-  return IMAGES_PER_PRODUCT;
+  return images.length;
 }
 
 /** A missing reference id is a broken seed, not something to paper over with a null. */

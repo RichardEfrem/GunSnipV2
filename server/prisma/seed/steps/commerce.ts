@@ -1,4 +1,5 @@
-import { clearBannerPlaceholders, writeBannerPlaceholder } from '../banner-placeholder.ts';
+import { pruneBannerPlaceholders, writeBannerPlaceholder } from '../banner-placeholder.ts';
+import { loadBannerPhotos } from '../banner-photo.ts';
 import { prisma } from '../client.ts';
 import { BANNERS, BUNDLES, VOUCHERS } from '../data/commerce.ts';
 import type { ReferenceIds } from './reference.ts';
@@ -55,20 +56,22 @@ export async function seedCommerce(
     });
   }
 
-  await clearBannerPlaceholders();
+  await pruneBannerPlaceholders(BANNERS.map((banner) => bannerSlug(banner.href)));
+  const photos = await loadBannerPhotos();
 
   for (const banner of BANNERS) {
-    // Generated rather than curated, like the product plates: the seed writes the file it
-    // points at, so the rail and the admin screen render something real. An operator replaces
-    // the path in admin (Banners → Edit → Image URL) when photography exists (FR-ADM-12).
-    const slug = banner.href.replaceAll('/', '-').replace(/^-/, '');
+    // Photography when the manifest has it, a generated placeholder otherwise — either way the
+    // seed points at a file that exists, so the rail and the admin screen render something
+    // real. An operator replaces the image in admin (Banners → Edit) later (FR-ADM-12).
+    const slug = bannerSlug(banner.href);
+    const photo = photos.get(slug);
 
     await prisma.banner.create({
       data: {
         title: banner.title,
         subtitle: banner.subtitle,
-        imageUrl: await writeBannerPlaceholder({ slug, code: banner.href }),
-        alt: banner.alt,
+        imageUrl: photo?.url ?? (await writeBannerPlaceholder({ slug, code: banner.href })),
+        alt: photo?.alt ?? banner.alt,
         href: banner.href,
         position: banner.position,
       },
@@ -82,4 +85,9 @@ function required(source: Map<string, string>, key: string, what: string): strin
   const id = source.get(key);
   if (id === undefined) throw new Error(`Seed refers to unknown ${what} "${key}"`);
   return id;
+}
+
+/** A banner's file is named after where it links, so the pruner and the writer agree on it. */
+function bannerSlug(href: string): string {
+  return href.replaceAll('/', '-').replace(/^-/, '');
 }

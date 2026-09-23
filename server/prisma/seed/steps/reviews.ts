@@ -8,7 +8,7 @@ import {
   type ReviewTone,
 } from '../data/reviews.ts';
 import { randomFor } from '../random.ts';
-import { clearReviewPhotos, writeReviewPhoto } from '../review-photo-placeholder.ts';
+import { pruneReviewPhotos, writeReviewPhoto } from '../review-photo-placeholder.ts';
 
 /**
  * Reviews, and the two counters on `product` that are derived from them.
@@ -79,7 +79,7 @@ export async function seedReviews(): Promise<ReviewResult> {
     orderBy: { slug: 'asc' },
   });
 
-  await clearReviewPhotos();
+  await pruneReviewPhotos(products.map((product) => product.slug));
 
   let reviews = 0;
   let reviewedProducts = 0;

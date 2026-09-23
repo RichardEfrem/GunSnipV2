@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
+import { pruneOrphans } from './placeholder-files.ts';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -80,12 +81,14 @@ function svg({ slug, reviewIndex, index }: ReviewPhotoInput): string {
 }
 
 /**
- * Clears the output directory before a seed writes into it, for the same reason
- * `clearPlaceholders` does: fewer reviews next run would otherwise strand the old files.
+ * Removes the review photos of products that no longer exist.
+ *
+ * Scoped by product slug, like `prunePlaceholders`. A product that keeps its slug but gets
+ * fewer photographed reviews can strand a few old files; they are small, gitignored and never
+ * referenced, and removing them would mean deleting files another database may still render.
  */
-export async function clearReviewPhotos(): Promise<void> {
-  await rm(OUTPUT_DIR, { recursive: true, force: true });
-  await mkdir(OUTPUT_DIR, { recursive: true });
+export async function pruneReviewPhotos(liveSlugs: Iterable<string>): Promise<number> {
+  return pruneOrphans(OUTPUT_DIR, liveSlugs);
 }
 
 export async function writeReviewPhoto(input: ReviewPhotoInput): Promise<string> {

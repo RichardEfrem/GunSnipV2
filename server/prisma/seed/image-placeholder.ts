@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { pruneOrphans } from './placeholder-files.ts';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -105,15 +106,14 @@ function blurDataUrl(plate: string): string {
 }
 
 /**
- * Clears the output directory before a seed writes into it.
+ * Removes the plates of products that no longer exist, before a seed writes into the directory.
  *
  * Filenames are derived from product slugs, so without this a renamed or removed product
- * leaves its old images behind forever — invisible locally, and eventually a directory whose
- * contents nobody can account for.
+ * leaves its old images behind forever. Scoped by slug rather than wiped, because every
+ * database shares this directory — see `pruneOrphans`.
  */
-export async function clearPlaceholders(): Promise<void> {
-  await rm(OUTPUT_DIR, { recursive: true, force: true });
-  await mkdir(OUTPUT_DIR, { recursive: true });
+export async function prunePlaceholders(liveSlugs: Iterable<string>): Promise<number> {
+  return pruneOrphans(OUTPUT_DIR, liveSlugs);
 }
 
 export async function writePlaceholder(input: PlaceholderInput): Promise<Placeholder> {

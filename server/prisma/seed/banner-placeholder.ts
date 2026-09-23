@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { pruneOrphans } from './placeholder-files.ts';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,12 +77,11 @@ function svg({ slug, code }: BannerPlaceholderInput): string {
 }
 
 /**
- * Clears the output directory before a seed writes into it, for the same reason
- * `clearPlaceholders` does: a renamed banner would otherwise leave its old file behind forever.
+ * Removes the files of banners that no longer exist, for the same reason `prunePlaceholders`
+ * does: a renamed banner would otherwise leave its old file behind forever.
  */
-export async function clearBannerPlaceholders(): Promise<void> {
-  await rm(OUTPUT_DIR, { recursive: true, force: true });
-  await mkdir(OUTPUT_DIR, { recursive: true });
+export async function pruneBannerPlaceholders(liveSlugs: Iterable<string>): Promise<number> {
+  return pruneOrphans(OUTPUT_DIR, liveSlugs);
 }
 
 export async function writeBannerPlaceholder(input: BannerPlaceholderInput): Promise<string> {

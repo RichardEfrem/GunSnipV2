@@ -1,0 +1,17 @@
+{
+  "kits-mg": {
+    "source": "https://www.gundamplanet.com/products/mg-rx-78-2-gundam-ver-3-0",
+    "url": "/media/promo/kits-mg.jpg",
+    "alt": "The bare inner frame of the Master Grade RX-78-2 Ver. 3.0, lit against a dark backdrop"
+  },
+  "bundles-first-build-starter": {
+    "source": "https://www.gundamplanet.com/products/entry-grade-rx-78-2-gundam",
+    "url": "/media/promo/bundles-first-build-starter.jpg",
+    "alt": "Two hands snapping an Entry Grade part off its runner, no tools"
+  },
+  "tools-nippers": {
+    "source": "https://www.gundamplanet.com/products/gh-spn-120-ultimate-nipper-5-0-side-cutter",
+    "url": "/media/promo/tools-nippers.jpg",
+    "alt": "A God Hand single-blade nipper with blue grips"
+  }
+}
